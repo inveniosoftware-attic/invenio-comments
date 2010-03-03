@@ -319,15 +319,15 @@ def get_comment_collection(cmt_id):
     record_primary_collection = guess_primary_collection_of_a_record(recid[0][0])
     return record_primary_collection
 
-def get_collection_moderator(collection):
+def get_collection_moderators(collection):
     """
-    Get the comment moderator for a given collection
+    Return the list of comment moderators for the given collection.
     """
     from invenio.access_control_engine import acc_get_authorized_emails
 
-    res =  acc_get_authorized_emails('moderatecomments', collection=collection)
+    res =  list(acc_get_authorized_emails('moderatecomments', collection=collection))
     if not res:
-        return CFG_WEBCOMMENT_DEFAULT_MODERATOR
+        return [CFG_WEBCOMMENT_DEFAULT_MODERATOR,]
     return res
 
 def perform_request_report(cmt_id, client_ip_address, uid=-1):
@@ -370,7 +370,7 @@ def perform_request_report(cmt_id, client_ip_address, uid=-1):
         (nickname, user_email, last_login) = query_get_user_contact_info(id_user)
         from_addr = '%s Alert Engine <%s>' % (CFG_SITE_NAME, CFG_WEBALERT_ALERT_ENGINE_EMAIL)
         comment_collection = get_comment_collection(cmt_id)
-        to_addr = get_collection_moderator(comment_collection)
+        to_addrs = get_collection_moderators(comment_collection)
         subject = "A comment has been reported as inappropriate by a user"
         body = '''
 The following comment has been reported a total of %(cmt_reported)s times.
@@ -415,8 +415,7 @@ Please go to the record page %(comment_admin_link)s to delete this message if ne
         #FIXME to be added to email when websession module is over:
         #If you wish to ban the user, you can do so via the User Admin Panel %(user_admin_link)s.
 
-        for email_address in to_addr:
-            send_email(from_addr, email_address, subject, body)
+        send_email(from_addr, to_addrs, subject, body)
     return 1
 
 def check_user_can_report(cmt_id, client_ip_address, uid=-1):
@@ -1309,7 +1308,7 @@ To moderate the %(comment_or_review)s go to %(siteurl)s/record/%(recID)s/%(comme
 
     from_addr = '%s WebComment <%s>' % (CFG_SITE_NAME, CFG_WEBALERT_ALERT_ENGINE_EMAIL)
     comment_collection = get_comment_collection(comID)
-    to_addr = get_collection_moderator(comment_collection)
+    to_addrs = get_collection_moderators(comment_collection)
 
     rec_collection = guess_primary_collection_of_a_record(id_bibrec)
     report_nums = get_fieldvalues(id_bibrec, "037__a")
@@ -1317,8 +1316,7 @@ To moderate the %(comment_or_review)s go to %(siteurl)s/record/%(recID)s/%(comme
     report_nums = ', '.join(report_nums)
     subject = "A new comment/review has just been posted [%s|%s]" % (rec_collection, report_nums)
 
-    for email in to_addr:
-        send_email(from_addr, to_addr, subject, out)
+    send_email(from_addr, to_addrs, subject, out)
 
 def check_recID_is_in_range(recID, warnings=[], ln=CFG_SITE_LANG):
     """
