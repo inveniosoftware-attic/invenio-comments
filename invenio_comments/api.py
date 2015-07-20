@@ -22,60 +22,49 @@
 __revision__ = "$Id$"
 
 # non Invenio imports:
-import time
+import cgi
 import math
 import os
-import shutil
-import cgi
 import re
+import shutil
+import time
 from datetime import datetime, timedelta
+
 from six import iteritems
+
+from invenio.base.i18n import gettext_set_language, wash_language
+from invenio.config import CFG_COMMENTSDIR, CFG_SITE_LANG, CFG_SITE_NAME, \
+    CFG_SITE_RECORD, CFG_SITE_SUPPORT_EMAIL, CFG_SITE_URL, \
+    CFG_WEBALERT_ALERT_ENGINE_EMAIL, CFG_WEBCOMMENT_ADMIN_NOTIFICATION_LEVEL, \
+    CFG_WEBCOMMENT_ALERT_ENGINE_EMAIL, CFG_WEBCOMMENT_ALLOW_COMMENTS, \
+    CFG_WEBCOMMENT_ALLOW_REVIEWS, CFG_WEBCOMMENT_ALLOW_SHORT_REVIEWS, \
+    CFG_WEBCOMMENT_DEFAULT_MODERATOR, CFG_WEBCOMMENT_EMAIL_REPLIES_TO, \
+    CFG_WEBCOMMENT_MAX_COMMENT_THREAD_DEPTH, \
+    CFG_WEBCOMMENT_NB_REPORTS_BEFORE_SEND_EMAIL_TO_ADMIN, \
+    CFG_WEBCOMMENT_RESTRICTION_DATAFIELD, CFG_WEBCOMMENT_ROUND_DATAFIELD, \
+    CFG_WEBCOMMENT_TIMELIMIT_PROCESSING_COMMENTS_IN_SECONDS
+from invenio.ext.email import send_email
+from invenio.ext.logging import register_exception
+# from invenio.modules.collections.cache import get_collection_reclist
+from invenio.legacy.bibrecord import get_fieldvalues
+from invenio.legacy.dbquery import datetime_format, run_sql
+from invenio.legacy.search_engine import check_user_can_view_record, \
+    guess_primary_collection_of_a_record
+from invenio.legacy.webuser import collect_user_info, get_email, get_user_info
+from invenio.modules.access.engine import acc_authorize_action
+from invenio.utils.date import convert_datestruct_to_datetext, \
+    convert_datetext_to_dategui, datetext_default
+from invenio.utils.html import tidy_html
+from invenio.utils.htmlwasher import EmailWasher
+from invenio.utils.mail import email_quote_txt, email_quoted_txt2html
+from invenio.utils.url import wash_url_argument
+
+from .config import CFG_WEBCOMMENT_ACTION_CODE, InvenioWebCommentError, \
+    InvenioWebCommentWarning
+from .models import CmtRECORDCOMMENT
 
 # Invenio imports:
 
-from invenio.legacy.dbquery import run_sql, datetime_format
-from invenio.config import CFG_COMMENTSDIR, \
-    CFG_SITE_LANG, \
-    CFG_WEBALERT_ALERT_ENGINE_EMAIL,\
-    CFG_SITE_SUPPORT_EMAIL,\
-    CFG_WEBCOMMENT_ALERT_ENGINE_EMAIL,\
-    CFG_SITE_URL,\
-    CFG_SITE_NAME,\
-    CFG_WEBCOMMENT_ALLOW_REVIEWS,\
-    CFG_WEBCOMMENT_ALLOW_SHORT_REVIEWS,\
-    CFG_WEBCOMMENT_ALLOW_COMMENTS,\
-    CFG_WEBCOMMENT_ADMIN_NOTIFICATION_LEVEL,\
-    CFG_WEBCOMMENT_NB_REPORTS_BEFORE_SEND_EMAIL_TO_ADMIN,\
-    CFG_WEBCOMMENT_TIMELIMIT_PROCESSING_COMMENTS_IN_SECONDS,\
-    CFG_WEBCOMMENT_DEFAULT_MODERATOR, \
-    CFG_SITE_RECORD, \
-    CFG_WEBCOMMENT_EMAIL_REPLIES_TO, \
-    CFG_WEBCOMMENT_ROUND_DATAFIELD, \
-    CFG_WEBCOMMENT_RESTRICTION_DATAFIELD, \
-    CFG_WEBCOMMENT_MAX_COMMENT_THREAD_DEPTH
-from invenio.utils.mail import \
-    email_quote_txt, \
-    email_quoted_txt2html
-from invenio.utils.html import tidy_html
-from invenio.legacy.webuser import get_user_info, get_email, collect_user_info
-from invenio.utils.date import convert_datetext_to_dategui, \
-                            datetext_default, \
-                            convert_datestruct_to_datetext
-from invenio.ext.email import send_email
-from invenio.ext.logging import register_exception
-from invenio.base.i18n import wash_language, gettext_set_language
-from invenio.utils.url import wash_url_argument
-from .config import CFG_WEBCOMMENT_ACTION_CODE, \
-    InvenioWebCommentError, \
-    InvenioWebCommentWarning
-from invenio.modules.access.engine import acc_authorize_action
-from invenio.modules.access.models import CmtRECORDCOMMENT
-from invenio.legacy.search_engine import \
-    guess_primary_collection_of_a_record, \
-    check_user_can_view_record
-# from invenio.modules.collections.cache import get_collection_reclist
-from invenio.legacy.bibrecord import get_fieldvalues
-from invenio.utils.htmlwasher import EmailWasher
 try:
     import invenio.legacy.template
     webcomment_templates = invenio.legacy.template.load('webcomment')
@@ -83,7 +72,24 @@ except:
     pass
 
 
-def perform_request_display_comments_or_remarks(req, recID, display_order='od', display_since='all', nb_per_page=100, page=1, ln=CFG_SITE_LANG, voted=-1, reported=-1, subscribed=0, reviews=0, uid=-1, can_send_comments=False, can_attach_files=False, user_is_subscribed_to_discussion=False, user_can_unsubscribe_from_discussion=False, display_comment_rounds=None):
+def perform_request_display_comments_or_remarks(
+        req,
+        recID,
+        display_order='od',
+        display_since='all',
+        nb_per_page=100,
+        page=1,
+        ln=CFG_SITE_LANG,
+        voted=-1,
+        reported=-1,
+        subscribed=0,
+        reviews=0,
+        uid=-1,
+        can_send_comments=False,
+        can_attach_files=False,
+        user_is_subscribed_to_discussion=False,
+        user_can_unsubscribe_from_discussion=False,
+        display_comment_rounds=None):
     """
     Returns all the comments (reviews) of a specific internal record or external basket record.
     @param recID:  record id where (internal record IDs > 0) or (external basket record IDs < -100)
@@ -138,20 +144,25 @@ def perform_request_display_comments_or_remarks(req, recID, display_order='od', 
     from invenio.config import CFG_CERN_SITE
     if CFG_CERN_SITE:
         restricted_comments_p = False
-        for report_number in  get_fieldvalues(recID, '088__a'):
+        for report_number in get_fieldvalues(recID, '088__a'):
             if report_number.startswith("ATL-"):
                 restricted_comments_p = True
                 break
         if restricted_comments_p:
-            err_code, err_msg = acc_authorize_action(uid, 'viewrestrcoll',
-                                                     collection='ATLAS Communications')
+            err_code, err_msg = acc_authorize_action(
+                uid, 'viewrestrcoll', collection='ATLAS Communications')
             if err_code:
                 return err_msg
     # CERN hack ends
 
     # Query the database and filter results
     user_info = collect_user_info(uid)
-    res = query_retrieve_comments_or_remarks(recID, display_order, display_since, reviews, user_info=user_info)
+    res = query_retrieve_comments_or_remarks(
+        recID,
+        display_order,
+        display_since,
+        reviews,
+        user_info=user_info)
     # res2 = query_retrieve_comments_or_remarks(recID, display_order, display_since, not reviews, user_info=user_info)
     nb_res = len(res)
 
@@ -173,41 +184,45 @@ def perform_request_display_comments_or_remarks(req, recID, display_order='od', 
     ))
 
     # checking non vital arguemnts - will be set to default if wrong
-    #if page <= 0 or page.lower() != 'all':
+    # if page <= 0 or page.lower() != 'all':
     if page < 0:
         page = 1
         try:
-            raise InvenioWebCommentWarning(_('Bad page number --> showing first page.'))
+            raise InvenioWebCommentWarning(
+                _('Bad page number --> showing first page.'))
         except InvenioWebCommentWarning as exc:
             register_exception(stream='warning', req=req)
             warnings.append((exc.message, ''))
-        #warnings.append(('WRN_WEBCOMMENT_INVALID_PAGE_NB',))
+        # warnings.append(('WRN_WEBCOMMENT_INVALID_PAGE_NB',))
     if nb_per_page < 0:
         nb_per_page = 100
         try:
-            raise InvenioWebCommentWarning(_('Bad number of results per page --> showing 10 results per page.'))
+            raise InvenioWebCommentWarning(
+                _('Bad number of results per page --> showing 10 results per page.'))
         except InvenioWebCommentWarning as exc:
             register_exception(stream='warning', req=req)
             warnings.append((exc.message, ''))
-        #warnings.append(('WRN_WEBCOMMENT_INVALID_NB_RESULTS_PER_PAGE',))
+        # warnings.append(('WRN_WEBCOMMENT_INVALID_NB_RESULTS_PER_PAGE',))
     if CFG_WEBCOMMENT_ALLOW_REVIEWS and reviews:
         if display_order not in ['od', 'nd', 'hh', 'lh', 'hs', 'ls']:
             display_order = 'hh'
             try:
-                raise InvenioWebCommentWarning(_('Bad display order --> showing most helpful first.'))
+                raise InvenioWebCommentWarning(
+                    _('Bad display order --> showing most helpful first.'))
             except InvenioWebCommentWarning as exc:
                 register_exception(stream='warning', req=req)
                 warnings.append((exc.message, ''))
-            #warnings.append(('WRN_WEBCOMMENT_INVALID_REVIEW_DISPLAY_ORDER',))
+            # warnings.append(('WRN_WEBCOMMENT_INVALID_REVIEW_DISPLAY_ORDER',))
     else:
         if display_order not in ['od', 'nd']:
             display_order = 'od'
             try:
-                raise InvenioWebCommentWarning(_('Bad display order --> showing oldest first.'))
+                raise InvenioWebCommentWarning(
+                    _('Bad display order --> showing oldest first.'))
             except InvenioWebCommentWarning as exc:
                 register_exception(stream='warning', req=req)
                 warnings.append((exc.message, ''))
-            #warnings.append(('WRN_WEBCOMMENT_INVALID_DISPLAY_ORDER',))
+            # warnings.append(('WRN_WEBCOMMENT_INVALID_DISPLAY_ORDER',))
 
     if not display_comment_rounds:
         display_comment_rounds = []
@@ -221,23 +236,26 @@ def perform_request_display_comments_or_remarks(req, recID, display_order='od', 
         if page > last_page:
             page = 1
             try:
-                raise InvenioWebCommentWarning(_('Bad page number --> showing first page.'))
+                raise InvenioWebCommentWarning(
+                    _('Bad page number --> showing first page.'))
             except InvenioWebCommentWarning as exc:
                 register_exception(stream='warning', req=req)
                 warnings.append((exc.message, ''))
-            #warnings.append(("WRN_WEBCOMMENT_INVALID_PAGE_NB",))
-        if nb_res > nb_per_page: # if more than one page of results
-            if  page < last_page:
-                res = res[(page-1)*(nb_per_page) : (page*nb_per_page)]
+            # warnings.append(("WRN_WEBCOMMENT_INVALID_PAGE_NB",))
+        if nb_res > nb_per_page:  # if more than one page of results
+            if page < last_page:
+                res = res[(page - 1) * (nb_per_page): (page * nb_per_page)]
             else:
-                res = res[(page-1)*(nb_per_page) : ]
-        else: # one page of results
+                res = res[(page - 1) * (nb_per_page):]
+        else:  # one page of results
             pass
     else:
         last_page = 1
 
     # Add information regarding visibility of comment for user
-    user_collapsed_comments = get_user_collapsed_comments_for_record(uid, recID)
+    user_collapsed_comments = get_user_collapsed_comments_for_record(
+        uid,
+        recID)
     if reviews:
         res = [row[:] + (row[10] in user_collapsed_comments,) for row in res]
     else:
@@ -245,9 +263,11 @@ def perform_request_display_comments_or_remarks(req, recID, display_order='od', 
 
     # Send to template
     avg_score = 0.0
-    if not CFG_WEBCOMMENT_ALLOW_COMMENTS and not CFG_WEBCOMMENT_ALLOW_REVIEWS: # comments not allowed by admin
+    # comments not allowed by admin
+    if not CFG_WEBCOMMENT_ALLOW_COMMENTS and not CFG_WEBCOMMENT_ALLOW_REVIEWS:
         try:
-            raise InvenioWebCommentError(_('Comments on records have been disallowed by the administrator.'))
+            raise InvenioWebCommentError(
+                _('Comments on records have been disallowed by the administrator.'))
         except InvenioWebCommentError as exc:
             register_exception(req=req)
             body = webcomment_templates.tmpl_error(exc.message, ln)
@@ -255,55 +275,62 @@ def perform_request_display_comments_or_remarks(req, recID, display_order='od', 
        # errors.append(('ERR_WEBCOMMENT_COMMENTS_NOT_ALLOWED',))
     if reported > 0:
         try:
-            raise InvenioWebCommentWarning(_('Your feedback has been recorded, many thanks.'))
+            raise InvenioWebCommentWarning(
+                _('Your feedback has been recorded, many thanks.'))
         except InvenioWebCommentWarning as exc:
             register_exception(stream='warning', req=req)
             warnings.append((exc.message, 'green'))
-        #warnings.append(('WRN_WEBCOMMENT_FEEDBACK_RECORDED',))
+        # warnings.append(('WRN_WEBCOMMENT_FEEDBACK_RECORDED',))
     elif reported == 0:
         try:
-            raise InvenioWebCommentWarning(_('You have already reported an abuse for this comment.'))
+            raise InvenioWebCommentWarning(
+                _('You have already reported an abuse for this comment.'))
         except InvenioWebCommentWarning as exc:
             register_exception(stream='warning', req=req)
             warnings.append((exc.message, ''))
-        #warnings.append(('WRN_WEBCOMMENT_ALREADY_REPORTED',))
+        # warnings.append(('WRN_WEBCOMMENT_ALREADY_REPORTED',))
     elif reported == -2:
         try:
-            raise InvenioWebCommentWarning(_('The comment you have reported no longer exists.'))
+            raise InvenioWebCommentWarning(
+                _('The comment you have reported no longer exists.'))
         except InvenioWebCommentWarning as exc:
             register_exception(stream='warning', req=req)
             warnings.append((exc.message, ''))
-        #warnings.append(('WRN_WEBCOMMENT_INVALID_REPORT',))
+        # warnings.append(('WRN_WEBCOMMENT_INVALID_REPORT',))
     if CFG_WEBCOMMENT_ALLOW_REVIEWS and reviews:
         avg_score = calculate_avg_score(res)
         if voted > 0:
             try:
-                raise InvenioWebCommentWarning(_('Your feedback has been recorded, many thanks.'))
+                raise InvenioWebCommentWarning(
+                    _('Your feedback has been recorded, many thanks.'))
             except InvenioWebCommentWarning as exc:
                 register_exception(stream='warning', req=req)
                 warnings.append((exc.message, 'green'))
-            #warnings.append(('WRN_WEBCOMMENT_FEEDBACK_RECORDED',))
+            # warnings.append(('WRN_WEBCOMMENT_FEEDBACK_RECORDED',))
         elif voted == 0:
             try:
-                raise InvenioWebCommentWarning(_('Sorry, you have already voted. This vote has not been recorded.'))
+                raise InvenioWebCommentWarning(
+                    _('Sorry, you have already voted. This vote has not been recorded.'))
             except InvenioWebCommentWarning as exc:
                 register_exception(stream='warning', req=req)
                 warnings.append((exc.message, ''))
-            #warnings.append(('WRN_WEBCOMMENT_ALREADY_VOTED',))
+            # warnings.append(('WRN_WEBCOMMENT_ALREADY_VOTED',))
     if subscribed == 1:
         try:
-            raise InvenioWebCommentWarning(_('You have been subscribed to this discussion. From now on, you will receive an email whenever a new comment is posted.'))
+            raise InvenioWebCommentWarning(
+                _('You have been subscribed to this discussion. From now on, you will receive an email whenever a new comment is posted.'))
         except InvenioWebCommentWarning as exc:
             register_exception(stream='warning', req=req)
             warnings.append((exc.message, 'green'))
-        #warnings.append(('WRN_WEBCOMMENT_SUBSCRIBED',))
+        # warnings.append(('WRN_WEBCOMMENT_SUBSCRIBED',))
     elif subscribed == -1:
         try:
-            raise InvenioWebCommentWarning(_('You have been unsubscribed from this discussion.'))
+            raise InvenioWebCommentWarning(
+                _('You have been unsubscribed from this discussion.'))
         except InvenioWebCommentWarning as exc:
             register_exception(stream='warning', req=req)
             warnings.append((exc.message, 'green'))
-        #warnings.append(('WRN_WEBCOMMENT_UNSUBSCRIBED',))
+        # warnings.append(('WRN_WEBCOMMENT_UNSUBSCRIBED',))
 
     grouped_comments = group_comments_by_round(res, reviews)
 
@@ -317,26 +344,31 @@ def perform_request_display_comments_or_remarks(req, recID, display_order='od', 
             display_comment_rounds.append(grouped_comments[-1][0])
         display_comment_rounds.remove('latest')
 
-    body = webcomment_templates.tmpl_get_comments(req,
-                                                  recID,
-                                                  ln,
-                                                  nb_per_page, page, last_page,
-                                                  display_order, display_since,
-                                                  CFG_WEBCOMMENT_ALLOW_REVIEWS,
-                                                  grouped_comments, nb_comments, avg_score,
-                                                  warnings,
-                                                  border=0,
-                                                  reviews=reviews,
-                                                  total_nb_reviews=nb_reviews,
-                                                  uid=uid,
-                                                  can_send_comments=can_send_comments,
-                                                  can_attach_files=can_attach_files,
-                                                  user_is_subscribed_to_discussion=\
-                                                  user_is_subscribed_to_discussion,
-                                                  user_can_unsubscribe_from_discussion=\
-                                                  user_can_unsubscribe_from_discussion,
-                                                  display_comment_rounds=display_comment_rounds)
+    body = webcomment_templates.tmpl_get_comments(
+        req,
+        recID,
+        ln,
+        nb_per_page,
+        page,
+        last_page,
+        display_order,
+        display_since,
+        CFG_WEBCOMMENT_ALLOW_REVIEWS,
+        grouped_comments,
+        nb_comments,
+        avg_score,
+        warnings,
+        border=0,
+        reviews=reviews,
+        total_nb_reviews=nb_reviews,
+        uid=uid,
+        can_send_comments=can_send_comments,
+        can_attach_files=can_attach_files,
+        user_is_subscribed_to_discussion=user_is_subscribed_to_discussion,
+        user_can_unsubscribe_from_discussion=user_can_unsubscribe_from_discussion,
+        display_comment_rounds=display_comment_rounds)
     return body
+
 
 def perform_request_vote(cmt_id, client_ip_address, value, uid=-1):
     """
@@ -350,7 +382,10 @@ def perform_request_vote(cmt_id, client_ip_address, value, uid=-1):
     client_ip_address = wash_url_argument(client_ip_address, 'str')
     value = wash_url_argument(value, 'int')
     uid = wash_url_argument(uid, 'int')
-    if cmt_id > 0 and value in [-1, 1] and check_user_can_vote(cmt_id, client_ip_address, uid):
+    if cmt_id > 0 and value in [-1,
+                                1] and check_user_can_vote(cmt_id,
+                                                           client_ip_address,
+                                                           uid):
         action_date = convert_datestruct_to_datetext(time.localtime())
         action_code = CFG_WEBCOMMENT_ACTION_CODE['VOTE']
         # FIXME compatibility with postgresql
@@ -364,6 +399,7 @@ def perform_request_vote(cmt_id, client_ip_address, value, uid=-1):
     else:
         return 0
 
+
 def check_user_can_comment(recID, client_ip_address, uid=-1):
     """ Check if a user hasn't already commented within the last seconds
     time limit: CFG_WEBCOMMENT_TIMELIMIT_PROCESSING_COMMENTS_IN_SECONDS
@@ -374,8 +410,10 @@ def check_user_can_comment(recID, client_ip_address, uid=-1):
     recID = wash_url_argument(recID, 'int')
     client_ip_address = wash_url_argument(client_ip_address, 'str')
     uid = wash_url_argument(uid, 'int')
-    max_action_time = time.time() - CFG_WEBCOMMENT_TIMELIMIT_PROCESSING_COMMENTS_IN_SECONDS
-    max_action_time = convert_datestruct_to_datetext(time.localtime(max_action_time))
+    max_action_time = time.time() - \
+        CFG_WEBCOMMENT_TIMELIMIT_PROCESSING_COMMENTS_IN_SECONDS
+    max_action_time = convert_datestruct_to_datetext(
+        time.localtime(max_action_time))
     action_code = CFG_WEBCOMMENT_ACTION_CODE['ADD_COMMENT']
     query = """SELECT id_bibrec
                FROM "cmtACTIONHISTORY"
@@ -392,6 +430,7 @@ def check_user_can_comment(recID, client_ip_address, uid=-1):
         params += (uid,)
     res = run_sql(query, params)
     return len(res) == 0
+
 
 def check_user_can_review(recID, client_ip_address, uid=-1):
     """ Check if a user hasn't already reviewed within the last seconds
@@ -416,6 +455,7 @@ def check_user_can_review(recID, client_ip_address, uid=-1):
     res = run_sql(query, params)
     return len(res) == 0
 
+
 def check_user_can_vote(cmt_id, client_ip_address, uid=-1):
     """ Checks if a user hasn't already voted
     @param cmt_id: comment id
@@ -438,14 +478,17 @@ def check_user_can_vote(cmt_id, client_ip_address, uid=-1):
     res = run_sql(query, params)
     return (len(res) == 0)
 
+
 def get_comment_collection(cmt_id):
     """
     Extract the collection where the comment is written
     """
     query = """SELECT id_bibrec FROM "cmtRECORDCOMMENT" WHERE id=%s"""
     recid = run_sql(query, (cmt_id,))
-    record_primary_collection = guess_primary_collection_of_a_record(recid[0][0])
+    record_primary_collection = guess_primary_collection_of_a_record(
+        recid[0][0])
     return record_primary_collection
+
 
 def get_collection_moderators(collection):
     """
@@ -453,15 +496,22 @@ def get_collection_moderators(collection):
     """
     from invenio.modules.access.engine import acc_get_authorized_emails
 
-    res =  list(acc_get_authorized_emails('moderatecomments', collection=collection))
+    res = list(
+        acc_get_authorized_emails(
+            'moderatecomments',
+            collection=collection))
     if not res:
-        return [CFG_WEBCOMMENT_DEFAULT_MODERATOR,]
+        return [CFG_WEBCOMMENT_DEFAULT_MODERATOR, ]
     return res
+
 
 def perform_request_report(cmt_id, client_ip_address, uid=-1):
     """
     Report a comment/review for inappropriate content.
-    Will send an email to the administrator if number of reports is a multiple of CFG_WEBCOMMENT_NB_REPORTS_BEFORE_SEND_EMAIL_TO_ADMIN
+
+    Will send an email to the administrator if number of reports is a multiple
+    of CFG_WEBCOMMENT_NB_REPORTS_BEFORE_SEND_EMAIL_TO_ADMIN
+
     @param cmt_id: comment id
     @return: integer 1 if successful, integer 0 if not. -2 if comment does not exist
     """
@@ -497,8 +547,11 @@ def perform_request_report(cmt_id, client_ip_address, uid=-1):
         (user_nb_abuse_reports,
          user_votes,
          user_nb_votes_total) = query_get_user_reports_and_votes(int(id_user))
-        (nickname, user_email, last_login) = query_get_user_contact_info(id_user)
-        from_addr = '%s Alert Engine <%s>' % (CFG_SITE_NAME, CFG_WEBALERT_ALERT_ENGINE_EMAIL)
+        (nickname,
+         user_email,
+         last_login) = query_get_user_contact_info(id_user)
+        from_addr = '%s Alert Engine <%s>' % (
+            CFG_SITE_NAME, CFG_WEBALERT_ALERT_ENGINE_EMAIL)
         comment_collection = get_comment_collection(cmt_id)
         to_addrs = get_collection_moderators(comment_collection)
         subject = "A comment has been reported as inappropriate by a user"
@@ -522,31 +575,36 @@ Comment:    comment_id      = %(cmt_id)s
 ---end body---
 
 Please go to the record page %(comment_admin_link)s to delete this message if necessary. A warning will be sent to the user in question.''' % \
-                {   'cfg-report_max'        : CFG_WEBCOMMENT_NB_REPORTS_BEFORE_SEND_EMAIL_TO_ADMIN,
-                    'nickname'              : nickname,
-                    'user_email'            : user_email,
-                    'uid'                   : id_user,
-                    'user_nb_abuse_reports' : user_nb_abuse_reports,
-                    'user_votes'            : user_votes,
-                    'votes'                 : CFG_WEBCOMMENT_ALLOW_REVIEWS and \
-                                              "total number of positive votes\t= %s\n\t\ttotal number of negative votes\t= %s" % \
-                                              (user_votes, (user_nb_votes_total - user_votes)) or "\n",
-                    'cmt_id'                : cmt_id,
-                    'id_bibrec'             : id_bibrec,
-                    'cmt_date'              : cmt_date,
-                    'cmt_reported'          : cmt_reported,
-                    'review_stuff'          : CFG_WEBCOMMENT_ALLOW_REVIEWS and \
-                                              "star score\t= %s\n\treview title\t= %s" % (cmt_star, cmt_title) or "",
-                    'cmt_body'              : cmt_body,
-                    'comment_admin_link'    : CFG_SITE_URL + "/"+ CFG_SITE_RECORD +"/" + str(id_bibrec) + '/comments#' + str(cmt_id),
-                    'user_admin_link'       : "user_admin_link" #! FIXME
-                }
+            {'cfg-report_max': CFG_WEBCOMMENT_NB_REPORTS_BEFORE_SEND_EMAIL_TO_ADMIN,
+             'nickname': nickname,
+             'user_email': user_email,
+             'uid': id_user,
+             'user_nb_abuse_reports': user_nb_abuse_reports,
+             'user_votes': user_votes,
+             'votes': CFG_WEBCOMMENT_ALLOW_REVIEWS and
+             "total number of positive votes\t= %s\n\t\ttotal number of negative votes\t= %s" %
+             (user_votes,
+              (user_nb_votes_total - user_votes)) or "\n",
+                'cmt_id': cmt_id,
+                'id_bibrec': id_bibrec,
+                'cmt_date': cmt_date,
+             'cmt_reported': cmt_reported,
+             'review_stuff': CFG_WEBCOMMENT_ALLOW_REVIEWS and
+             "star score\t= %s\n\treview title\t= %s" % (
+                 cmt_star,
+                 cmt_title) or "",
+                'cmt_body': cmt_body,
+             'comment_admin_link': CFG_SITE_URL + "/" + CFG_SITE_RECORD + "/" + str(id_bibrec) + '/comments#' + str(cmt_id),
+             'user_admin_link': "user_admin_link"  # ! FIXME
+             }
 
-        #FIXME to be added to email when websession module is over:
-        #If you wish to ban the user, you can do so via the User Admin Panel %(user_admin_link)s.
+        # FIXME to be added to email when websession module is over:
+        # If you wish to ban the user, you can do so via the User Admin Panel
+        # %(user_admin_link)s.
 
         send_email(from_addr, to_addrs, subject, body)
     return 1
+
 
 def check_user_can_report(cmt_id, client_ip_address, uid=-1):
     """ Checks if a user hasn't already reported a comment
@@ -570,6 +628,7 @@ def check_user_can_report(cmt_id, client_ip_address, uid=-1):
     res = run_sql(query, params)
     return (len(res) == 0)
 
+
 def query_get_user_contact_info(uid):
     """
     Get the user contact information
@@ -579,8 +638,8 @@ def query_get_user_contact_info(uid):
     # FIXME compatibility with postgresql
     query1 = """SELECT nickname, email,
                        """ + \
-                           datetime_format('last_login') + \
-                       """
+        datetime_format('last_login') + \
+        """
                      FROM "user" WHERE id=%s"""
     params1 = (uid,)
     res1 = run_sql(query1, params1)
@@ -613,6 +672,7 @@ def query_get_user_reports_and_votes(uid):
         nb_abuse_reports += int(cmt_tuple[2])
     return (nb_abuse_reports, nb_votes_yes, nb_votes_total)
 
+
 def query_get_comment(comID):
     """
     Get all fields of a comment
@@ -625,8 +685,8 @@ def query_get_comment(comID):
                        id_user,
                        body,
                        """ + \
-                           datetime_format('date_creation') + ', ' \
-                       """
+        datetime_format('date_creation') + ', ' \
+        """
                        star_score,
                        nb_votes_yes,
                        nb_votes_total,
@@ -638,10 +698,11 @@ def query_get_comment(comID):
                 WHERE id=%s"""
     params1 = (comID,)
     res1 = run_sql(query1, params1)
-    if len(res1)>0:
+    if len(res1) > 0:
         return res1[0]
     else:
         return ()
+
 
 def query_record_report_this(comID):
     """
@@ -650,7 +711,7 @@ def query_record_report_this(comID):
     @return: tuple (success, new_total_nb_reports_for_this_comment) where
     success is integer 1 if success, integer 0 if not, -2 if comment does not exist
     """
-    #retrieve nb_abuse_reports
+    # retrieve nb_abuse_reports
     query1 = """SELECT nb_abuse_reports FROM "cmtRECORDCOMMENT" WHERE id=%s"""
     params1 = (comID,)
     res1 = run_sql(query1, params1)
@@ -664,6 +725,7 @@ def query_record_report_this(comID):
     res2 = run_sql(query2, params2)
     return (int(res2), nb_abuse_reports)
 
+
 def query_record_useful_review(comID, value):
     """
     private funciton
@@ -676,7 +738,7 @@ def query_record_useful_review(comID, value):
     query1 = """SELECT nb_votes_total, nb_votes_yes FROM "cmtRECORDCOMMENT" WHERE id=%s"""
     params1 = (comID,)
     res1 = run_sql(query1, params1)
-    if len(res1)==0:
+    if len(res1) == 0:
         return 0
 
     # modify and insert new nb_useful votes
@@ -689,8 +751,14 @@ def query_record_useful_review(comID, value):
     res2 = run_sql(query2, params2)
     return int(res2)
 
-def query_retrieve_comments_or_remarks(recID, display_order='od', display_since='0000-00-00 00:00:00',
-                                       ranking=0, limit='all', user_info=None):
+
+def query_retrieve_comments_or_remarks(
+        recID,
+        display_order='od',
+        display_since='0000-00-00 00:00:00',
+        ranking=0,
+        limit='all',
+        user_info=None):
     """
     Private function
     Retrieve tuple of comments or remarks from the database
@@ -711,13 +779,13 @@ def query_retrieve_comments_or_remarks(recID, display_order='od', display_since=
     """
     display_since = calculate_start_date(display_since)
 
-    order_dict =    {   'hh'   : "cmt.nb_votes_yes/(cmt.nb_votes_total+1) DESC, cmt.date_creation DESC ",
-                        'lh'   : "cmt.nb_votes_yes/(cmt.nb_votes_total+1) ASC, cmt.date_creation ASC ",
-                        'ls'   : "cmt.star_score ASC, cmt.date_creation DESC ",
-                        'hs'   : "cmt.star_score DESC, cmt.date_creation DESC ",
-                        'nd'   : "cmt.reply_order_cached_data DESC ",
-                        'od'   : "cmt.reply_order_cached_data ASC "
-                    }
+    order_dict = {
+        'hh': "cmt.nb_votes_yes/(cmt.nb_votes_total+1) DESC, cmt.date_creation DESC ",
+        'lh': "cmt.nb_votes_yes/(cmt.nb_votes_total+1) ASC, cmt.date_creation ASC ",
+        'ls': "cmt.star_score ASC, cmt.date_creation DESC ",
+        'hs': "cmt.star_score DESC, cmt.date_creation DESC ",
+        'nd': "cmt.reply_order_cached_data DESC ",
+        'od': "cmt.reply_order_cached_data ASC "}
 
     # Ranking only done for comments and when allowed
     if ranking and recID > 0:
@@ -740,8 +808,8 @@ def query_retrieve_comments_or_remarks(recID, display_order='od', display_since=
     query = """SELECT user.nickname,
                       cmt.id_user,
                        """ + \
-                       datetime_format('cmt.date_creation', False, True) + ', ' \
-                       """
+        datetime_format('cmt.date_creation', False, True) + ', ' \
+        """
                       cmt.body,
                       cmt.status,
                       cmt.nb_abuse_reports,
@@ -756,12 +824,12 @@ def query_retrieve_comments_or_remarks(recID, display_order='od', display_since=
                %(display_since)s
                ORDER BY %(display_order)s
                """ % {'ranking'       : ranking and ' cmt.nb_votes_yes, cmt.nb_votes_total, cmt.star_score, cmt.title, ' or '',
-                      'ranking_only'  : ranking and ' AND cmt.star_score>0 ' or ' AND cmt.star_score=0 ',
-#                      'id_bibrec'     : recID > 0 and 'cmt.id_bibrec' or 'cmt.id_bibrec_or_bskEXTREC',
-#                      'table'         : recID > 0 and 'cmtRECORDCOMMENT' or 'bskRECORDCOMMENT',
-                      'display_since' : display_since == '0000-00-00 00:00:00' and ' ' or 'AND cmt.date_creation>=\'%s\' ' % display_since,
-               'display_order': display_order,
-               'reply_to_column':  recID > 0 and 'cmt."in_reply_to_id_cmtRECORDCOMMENT"' or 'cmt."in_reply_to_id_bskRECORDCOMMENT"'}
+                      'ranking_only': ranking and ' AND cmt.star_score>0 ' or ' AND cmt.star_score=0 ',
+                      #                      'id_bibrec'     : recID > 0 and 'cmt.id_bibrec' or 'cmt.id_bibrec_or_bskEXTREC',
+                      #                      'table'         : recID > 0 and 'cmtRECORDCOMMENT' or 'bskRECORDCOMMENT',
+                      'display_since': display_since == '0000-00-00 00:00:00' and ' ' or 'AND cmt.date_creation>=\'%s\' ' % display_since,
+                      'display_order': display_order,
+                      'reply_to_column': recID > 0 and 'cmt."in_reply_to_id_cmtRECORDCOMMENT"' or 'cmt."in_reply_to_id_bskRECORDCOMMENT"'}
     params = (recID,)
     res = run_sql(query, params)
 #    return res
@@ -775,7 +843,8 @@ def query_retrieve_comments_or_remarks(recID, display_order='od', display_since=
         else:
             # when dealing with comments, row[8] holds restriction info:
             restriction = row[8]
-        if user_info and check_user_can_view_comment(user_info, None, restriction)[0] != 0:
+        if user_info and check_user_can_view_comment(
+                user_info, None, restriction)[0] != 0:
             # User cannot view comment. Look further
             continue
         comments_list.append(row)
@@ -793,7 +862,8 @@ def query_retrieve_comments_or_remarks(recID, display_order='od', display_since=
 
 # def get_comment_children(comID):
 #     """
-#     Returns the list of children (i.e. direct descendants) ordered by time of addition.
+# Returns the list of children (i.e. direct descendants) ordered by time
+# of addition.
 
 #     @param comID: the ID of the comment for which we want to retrieve children
 #     @type comID: int
@@ -830,6 +900,7 @@ def query_retrieve_comments_or_remarks(recID, display_order='od', display_since=
 #     else:
 #         return (comID, [])
 
+
 def get_comment_ancestors(comID, depth=None):
     """
     Returns the list of ancestors of the given comment, ordered from
@@ -848,7 +919,10 @@ def get_comment_ancestors(comID, depth=None):
     if depth == 0:
         return []
 
-    res = run_sql("""SELECT "in_reply_to_id_cmtRECORDCOMMENT" FROM "cmtRECORDCOMMENT" WHERE id=%s""", (comID,))
+    res = run_sql(
+        """SELECT "in_reply_to_id_cmtRECORDCOMMENT" FROM "cmtRECORDCOMMENT" WHERE id=%s""",
+        (comID,
+         ))
     if res:
         parent_comID = res[0][0]
         if parent_comID == 0:
@@ -862,6 +936,7 @@ def get_comment_ancestors(comID, depth=None):
     else:
         return []
 
+
 def get_reply_order_cache_data(comid):
     """
     Prepare a representation of the comment ID given as parameter so
@@ -869,6 +944,7 @@ def get_reply_order_cache_data(comid):
     """
     return "%s%s%s%s" % (chr((comid >> 24) % 256), chr((comid >> 16) % 256),
                          chr((comid >> 8) % 256), chr(comid % 256))
+
 
 def query_add_comment_or_remark(reviews=0, recID=0, uid=-1, msg="",
                                 note="", score=0, priority=0,
@@ -889,10 +965,10 @@ def query_add_comment_or_remark(reviews=0, recID=0, uid=-1, msg="",
     @return: integer >0 representing id if successful, integer 0 if not
     """
     current_date = calculate_start_date('0d')
-    #change utf-8 message into general unicode
+    # change utf-8 message into general unicode
     msg = msg.decode('utf-8')
     note = note.decode('utf-8')
-    #change general unicode back to utf-8
+    # change general unicode back to utf-8
     msg = msg.encode('utf-8')
     note = note.encode('utf-8')
     (restriction, round_name) = get_record_status(recID)
@@ -905,7 +981,9 @@ def query_add_comment_or_remark(reviews=0, recID=0, uid=-1, msg="",
             if CFG_WEBCOMMENT_MAX_COMMENT_THREAD_DEPTH == 0:
                 reply_to = None
             else:
-                reply_to = comment_ancestors[CFG_WEBCOMMENT_MAX_COMMENT_THREAD_DEPTH - 1]
+                reply_to = comment_ancestors[
+                    CFG_WEBCOMMENT_MAX_COMMENT_THREAD_DEPTH -
+                    1]
         # Inherit restriction and group/round of 'parent'
         comment = query_get_comment(reply_to)
         if comment:
@@ -959,25 +1037,48 @@ def query_add_comment_or_remark(reviews=0, recID=0, uid=-1, msg="",
                                            restriction,
                                            "in_reply_to_id_cmtRECORDCOMMENT")
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
-    params = (recID, uid, msg, current_date, score, 0, note, round_name, restriction, reply_to or 0)
+    params = (
+        recID,
+        uid,
+        msg,
+        current_date,
+        score,
+        0,
+        note,
+        round_name,
+        restriction,
+        reply_to or 0)
     res = run_sql(query, params)
     if res:
         new_comid = int(res)
         move_attached_files_to_storage(attached_files, recID, new_comid)
-        parent_reply_order = run_sql("""SELECT reply_order_cached_data from "cmtRECORDCOMMENT" where id=%s""", (reply_to,))
+        parent_reply_order = run_sql(
+            """SELECT reply_order_cached_data from "cmtRECORDCOMMENT" where id=%s""",
+            (reply_to,
+             ))
         if not parent_reply_order or parent_reply_order[0][0] is None:
             # This is not a reply, but a first 0-level comment
             parent_reply_order = ''
         else:
             parent_reply_order = parent_reply_order[0][0]
-        run_sql("""UPDATE "cmtRECORDCOMMENT" SET reply_order_cached_data=%s WHERE id=%s""",
-                (parent_reply_order + get_reply_order_cache_data(new_comid), new_comid))
-        action_code = CFG_WEBCOMMENT_ACTION_CODE[reviews and 'ADD_REVIEW' or 'ADD_COMMENT']
+        run_sql(
+            """UPDATE "cmtRECORDCOMMENT" SET reply_order_cached_data=%s WHERE id=%s""",
+            (parent_reply_order +
+             get_reply_order_cache_data(new_comid),
+             new_comid))
+        action_code = CFG_WEBCOMMENT_ACTION_CODE[
+            reviews and 'ADD_REVIEW' or 'ADD_COMMENT']
         action_time = convert_datestruct_to_datetext(time.localtime())
         query2 = """INSERT INTO "cmtACTIONHISTORY"  ("id_cmtRECORDCOMMENT",
                      id_bibrec, id_user, client_host, action_time, action_code)
                     VALUES (%s, %s, %s, inet_aton(%s), %s, %s)"""
-        params2 = (res, recID, uid, client_ip_address, action_time, action_code)
+        params2 = (
+            res,
+            recID,
+            uid,
+            client_ip_address,
+            action_time,
+            action_code)
         run_sql(query2, params2)
 
         def notify_subscribers_callback(data):
@@ -991,13 +1092,18 @@ def query_add_comment_or_remark(reviews=0, recID=0, uid=-1, msg="",
             recid, uid, comid, msg, note, score, editor_type, reviews = data
             # Email this comment to 'subscribers'
             (subscribers_emails1, subscribers_emails2) = \
-                                  get_users_subscribed_to_discussion(recid)
-            email_subscribers_about_new_comment(recid, reviews=reviews,
-                                                emails1=subscribers_emails1,
-                                                emails2=subscribers_emails2,
-                                                comID=comid, msg=msg,
-                                                note=note, score=score,
-                                                editor_type=editor_type, uid=uid)
+                get_users_subscribed_to_discussion(recid)
+            email_subscribers_about_new_comment(
+                recid,
+                reviews=reviews,
+                emails1=subscribers_emails1,
+                emails2=subscribers_emails2,
+                comID=comid,
+                msg=msg,
+                note=note,
+                score=score,
+                editor_type=editor_type,
+                uid=uid)
 
         # Register our callback to notify subscribed people after
         # having replied to our current user.
@@ -1008,6 +1114,7 @@ def query_add_comment_or_remark(reviews=0, recID=0, uid=-1, msg="",
             notify_subscribers_callback(data)
 
     return int(res)
+
 
 def move_attached_files_to_storage(attached_files, recID, comid):
     """
@@ -1030,6 +1137,7 @@ def move_attached_files_to_storage(attached_files, recID, comid):
         shutil.move(filepath,
                     os.path.join(dest_dir, filename))
 
+
 def get_attached_files(recid, comid):
     """
     Returns a list with tuples (filename, filepath, fileurl)
@@ -1040,12 +1148,26 @@ def get_attached_files(recid, comid):
     base_dir = os.path.join(CFG_COMMENTSDIR, str(recid), str(comid))
     if os.path.isdir(base_dir):
         filenames = os.listdir(base_dir)
-        return [(filename, os.path.join(CFG_COMMENTSDIR,
-                                        str(recid), str(comid), filename),
-                 CFG_SITE_URL + '/'+ CFG_SITE_RECORD +'/' + str(recid) + '/comments/attachments/get/' + str(comid) + '/' + filename) \
-                for filename in filenames]
+        return [
+            (
+                filename,
+                os.path.join(
+                    CFG_COMMENTSDIR,
+                    str(recid),
+                    str(comid),
+                    filename),
+                CFG_SITE_URL +
+                '/' +
+                CFG_SITE_RECORD +
+                '/' +
+                str(recid) +
+                '/comments/attachments/get/' +
+                str(comid) +
+                '/' +
+                filename) for filename in filenames]
     else:
         return []
+
 
 def subscribe_user_to_discussion(recID, uid):
     """
@@ -1064,6 +1186,7 @@ def subscribe_user_to_discussion(recID, uid):
     except:
         return 0
     return 1
+
 
 def unsubscribe_user_from_discussion(recID, uid):
     """
@@ -1085,6 +1208,7 @@ def unsubscribe_user_from_discussion(recID, uid):
         return 1
     return 0
 
+
 def get_user_subscription_to_discussion(recID, uid):
     """
     Returns the type of subscription for the given user to this
@@ -1099,13 +1223,15 @@ def get_user_subscription_to_discussion(recID, uid):
                - 2 if user is subscribed, but cannot unsubscribe
     """
     user_email = get_email(uid)
-    (emails1, emails2) = get_users_subscribed_to_discussion(recID, check_authorizations=False)
+    (emails1, emails2) = get_users_subscribed_to_discussion(
+        recID, check_authorizations=False)
     if user_email in emails1:
         return 1
     elif user_email in emails2:
         return 2
     else:
         return 0
+
 
 def get_users_subscribed_to_discussion(recID, check_authorizations=True):
     """
@@ -1134,7 +1260,8 @@ def get_users_subscribed_to_discussion(recID, check_authorizations=True):
         uid = row[0]
         if check_authorizations:
             user_info = collect_user_info(uid)
-            (auth_code, auth_msg) = check_user_can_view_comments(user_info, recID)
+            (auth_code, auth_msg) = check_user_can_view_comments(
+                user_info, recID)
         else:
             # Don't check and grant access
             auth_code = False
@@ -1157,15 +1284,18 @@ def get_users_subscribed_to_discussion(recID, check_authorizations=True):
                 for email in emails:
                     if not '@' in email:
                         # Is a group: add domain name
-                        subscribers_emails[email + '@' + \
-                                           CFG_SITE_SUPPORT_EMAIL.split('@')[1]] = False
+                        subscribers_emails[
+                            email +
+                            '@' +
+                            CFG_SITE_SUPPORT_EMAIL.split('@')[1]] = False
                     else:
                         subscribers_emails[email] = False
 
-    return ([email for email, can_unsubscribe_p \
+    return ([email for email, can_unsubscribe_p
              in iteritems(subscribers_emails) if can_unsubscribe_p],
-            [email for email, can_unsubscribe_p \
-             in iteritems(subscribers_emails) if not can_unsubscribe_p] )
+            [email for email, can_unsubscribe_p
+             in iteritems(subscribers_emails) if not can_unsubscribe_p])
+
 
 def email_subscribers_about_new_comment(recID, reviews, emails1,
                                         emails2, comID, msg="",
@@ -1213,13 +1343,15 @@ def email_subscribers_about_new_comment(recID, reviews, emails1,
 
     # Prepare email subject and body
     if reviews:
-        email_subject = _('%(report_number)s"%(title)s" has been reviewed') % \
-                        {'report_number': report_numbers and ('[' + report_numbers[0] + '] ') or '',
-                         'title': title}
+        email_subject = _('%(report_number)s"%(title)s" has been reviewed') % {
+            'report_number': report_numbers and (
+                '[' + report_numbers[0] + '] ') or '',
+            'title': title}
     else:
-        email_subject = _('%(report_number)s"%(title)s" has been commented') % \
-                        {'report_number': report_numbers and ('[' + report_numbers[0] + '] ') or '',
-                         'title': title}
+        email_subject = _('%(report_number)s"%(title)s" has been commented') % {
+            'report_number': report_numbers and (
+                '[' + report_numbers[0] + '] ') or '',
+            'title': title}
 
     washer = EmailWasher()
     msg = washer.wash(msg)
@@ -1229,22 +1361,24 @@ def email_subscribers_about_new_comment(recID, reviews, emails1,
         email_content = note + email_content
 
     # Send emails to people who can unsubscribe
-    email_header = webcomment_templates.tmpl_email_new_comment_header(recID,
-                                                                      title,
-                                                                      reviews,
-                                                                      comID,
-                                                                      report_numbers,
-                                                                      can_unsubscribe=True,
-                                                                      ln=ln,
-                                                                      uid=uid)
+    email_header = webcomment_templates.tmpl_email_new_comment_header(
+        recID,
+        title,
+        reviews,
+        comID,
+        report_numbers,
+        can_unsubscribe=True,
+        ln=ln,
+        uid=uid)
 
-    email_footer = webcomment_templates.tmpl_email_new_comment_footer(recID,
-                                                                      title,
-                                                                      reviews,
-                                                                      comID,
-                                                                      report_numbers,
-                                                                      can_unsubscribe=True,
-                                                                      ln=ln)
+    email_footer = webcomment_templates.tmpl_email_new_comment_footer(
+        recID,
+        title,
+        reviews,
+        comID,
+        report_numbers,
+        can_unsubscribe=True,
+        ln=ln)
     res1 = True
     if emails1:
         res1 = send_email(fromaddr=CFG_WEBCOMMENT_ALERT_ENGINE_EMAIL,
@@ -1257,22 +1391,24 @@ def email_subscribers_about_new_comment(recID, reviews, emails1,
 
     # Then send email to people who have been automatically
     # subscribed to the discussion (they cannot unsubscribe)
-    email_header = webcomment_templates.tmpl_email_new_comment_header(recID,
-                                                                      title,
-                                                                      reviews,
-                                                                      comID,
-                                                                      report_numbers,
-                                                                      can_unsubscribe=False,
-                                                                      ln=ln,
-                                                                      uid=uid)
+    email_header = webcomment_templates.tmpl_email_new_comment_header(
+        recID,
+        title,
+        reviews,
+        comID,
+        report_numbers,
+        can_unsubscribe=False,
+        ln=ln,
+        uid=uid)
 
-    email_footer = webcomment_templates.tmpl_email_new_comment_footer(recID,
-                                                                      title,
-                                                                      reviews,
-                                                                      comID,
-                                                                      report_numbers,
-                                                                      can_unsubscribe=False,
-                                                                      ln=ln)
+    email_footer = webcomment_templates.tmpl_email_new_comment_footer(
+        recID,
+        title,
+        reviews,
+        comID,
+        report_numbers,
+        can_unsubscribe=False,
+        ln=ln)
     res2 = True
     if emails2:
         res2 = send_email(fromaddr=CFG_WEBCOMMENT_ALERT_ENGINE_EMAIL,
@@ -1284,6 +1420,7 @@ def email_subscribers_about_new_comment(recID, reviews, emails1,
                           ln=ln)
 
     return res1 and res2
+
 
 def get_record_status(recid):
     """
@@ -1306,7 +1443,11 @@ def get_record_status(recid):
         # Find the first collection defines rounds field for this
         # record
         if recid in get_collection_reclist(collection):
-            commenting_rounds = get_fieldvalues(recid, CFG_WEBCOMMENT_ROUND_DATAFIELD.get(collection, ""))
+            commenting_rounds = get_fieldvalues(
+                recid,
+                CFG_WEBCOMMENT_ROUND_DATAFIELD.get(
+                    collection,
+                    ""))
             if commenting_rounds:
                 commenting_round = commenting_rounds[0]
             break
@@ -1317,12 +1458,17 @@ def get_record_status(recid):
         # Find the first collection that defines restriction field for
         # this record
         if recid in get_collection_reclist(collection):
-            restrictions = get_fieldvalues(recid, CFG_WEBCOMMENT_RESTRICTION_DATAFIELD.get(collection, ""))
+            restrictions = get_fieldvalues(
+                recid,
+                CFG_WEBCOMMENT_RESTRICTION_DATAFIELD.get(
+                    collection,
+                    ""))
             if restrictions:
                 restriction = restrictions[0]
             break
 
     return (restriction, commenting_round)
+
 
 def calculate_start_date(display_since):
     """
@@ -1343,7 +1489,7 @@ def calculate_start_date(display_since):
             If library 'dateutil' is not found return datetext_default
             and register exception.
     """
-    time_types = {'d':0, 'w':0, 'm':0, 'y':0}
+    time_types = {'d': 0, 'w': 0, 'm': 0, 'y': 0}
     today = datetime.today()
     try:
         nb = int(display_since[:-1])
@@ -1357,7 +1503,8 @@ def calculate_start_date(display_since):
         return datetext_default
     # year
     if time_type == 'y':
-        if (int(display_since[:-1]) > today.year - 1) or (int(display_since[:-1]) < 1):
+        if (int(display_since[:-1]) > today.year -
+                1) or (int(display_since[:-1]) < 1):
             #   1 < nb years < 2008
             return datetext_default
         else:
@@ -1375,7 +1522,10 @@ def calculate_start_date(display_since):
         # obtain only the date: yyyy-mm-dd
         date_today = datetime.now().date()
         final_date = date_today - relativedelta(months=nb)
-        yesterday = today.replace(year=final_date.year, month=final_date.month, day=final_date.day)
+        yesterday = today.replace(
+            year=final_date.year,
+            month=final_date.month,
+            day=final_date.day)
     # week
     elif time_type == 'w':
         delta = timedelta(weeks=nb)
@@ -1385,6 +1535,7 @@ def calculate_start_date(display_since):
         delta = timedelta(days=nb)
         yesterday = today - delta
     return yesterday.strftime("%Y-%m-%d %H:%M:%S")
+
 
 def get_first_comments_or_remarks(recID=-1,
                                   ln=CFG_SITE_LANG,
@@ -1412,81 +1563,114 @@ def get_first_comments_or_remarks(recID=-1,
     voted = wash_url_argument(voted, 'int')
     reported = wash_url_argument(reported, 'int')
 
-    ## check recID argument
-    if type(recID) is not int:
+    # check recID argument
+    if not isinstance(recID, int):
         return ()
-    if recID >= 1: #comment or review. NB: suppressed reference to basket (handled in webbasket)
+    # comment or review. NB: suppressed reference to basket (handled in
+    # webbasket)
+    if recID >= 1:
         if CFG_WEBCOMMENT_ALLOW_REVIEWS:
-            res_reviews = query_retrieve_comments_or_remarks(recID=recID, display_order="hh", ranking=1,
-                                                             limit=nb_comments, user_info=user_info)
+            res_reviews = query_retrieve_comments_or_remarks(
+                recID=recID,
+                display_order="hh",
+                ranking=1,
+                limit=nb_comments,
+                user_info=user_info)
             nb_res_reviews = len(res_reviews)
-            ## check nb argument
-            if type(nb_reviews) is int and nb_reviews < len(res_reviews):
+            # check nb argument
+            if isinstance(nb_reviews, int) and nb_reviews < len(res_reviews):
                 first_res_reviews = res_reviews[:nb_reviews]
             else:
                 first_res_reviews = res_reviews
         if CFG_WEBCOMMENT_ALLOW_COMMENTS:
-            res_comments = query_retrieve_comments_or_remarks(recID=recID, display_order="od", ranking=0,
-                                                              limit=nb_reviews, user_info=user_info)
+            res_comments = query_retrieve_comments_or_remarks(
+                recID=recID,
+                display_order="od",
+                ranking=0,
+                limit=nb_reviews,
+                user_info=user_info)
             nb_res_comments = len(res_comments)
-            ## check nb argument
-            if type(nb_comments) is int and nb_comments < len(res_comments):
+            # check nb argument
+            if isinstance(nb_comments, int) and nb_comments < len(
+                    res_comments):
                 first_res_comments = res_comments[:nb_comments]
             else:
                 first_res_comments = res_comments
-    else: #error
+    else:  # error
         try:
-            raise InvenioWebCommentError(_('%(recid)s is an invalid record ID', recid=recID))
+            raise InvenioWebCommentError(
+                _('%(recid)s is an invalid record ID', recid=recID))
         except InvenioWebCommentError as exc:
             register_exception()
             body = webcomment_templates.tmpl_error(exc.message, ln)
             return body
-        #errors.append(('ERR_WEBCOMMENT_RECID_INVALID', recID)) #!FIXME dont return error anywhere since search page
+        # errors.append(('ERR_WEBCOMMENT_RECID_INVALID', recID)) #!FIXME dont
+        # return error anywhere since search page
 
     # comment
     if recID >= 1:
         comments = reviews = ""
         if reported > 0:
             try:
-                raise InvenioWebCommentWarning(_('Your feedback has been recorded, many thanks.'))
+                raise InvenioWebCommentWarning(
+                    _('Your feedback has been recorded, many thanks.'))
             except InvenioWebCommentWarning as exc:
                 register_exception(stream='warning')
                 warnings.append((exc.message, 'green'))
-            #warnings.append(('WRN_WEBCOMMENT_FEEDBACK_RECORDED_GREEN_TEXT',))
+            # warnings.append(('WRN_WEBCOMMENT_FEEDBACK_RECORDED_GREEN_TEXT',))
         elif reported == 0:
             try:
-                raise InvenioWebCommentWarning(_('Your feedback could not be recorded, please try again.'))
+                raise InvenioWebCommentWarning(
+                    _('Your feedback could not be recorded, please try again.'))
             except InvenioWebCommentWarning as exc:
                 register_exception(stream='warning')
                 warnings.append((exc.message, ''))
-            #warnings.append(('WRN_WEBCOMMENT_FEEDBACK_NOT_RECORDED_RED_TEXT',))
-        if CFG_WEBCOMMENT_ALLOW_COMMENTS: # normal comments
-            grouped_comments = group_comments_by_round(first_res_comments, ranking=0)
-            comments = webcomment_templates.tmpl_get_first_comments_without_ranking(recID, ln, grouped_comments, nb_res_comments, warnings)
+            # warnings.append(('WRN_WEBCOMMENT_FEEDBACK_NOT_RECORDED_RED_TEXT',))
+        if CFG_WEBCOMMENT_ALLOW_COMMENTS:  # normal comments
+            grouped_comments = group_comments_by_round(
+                first_res_comments,
+                ranking=0)
+            comments = webcomment_templates.tmpl_get_first_comments_without_ranking(
+                recID,
+                ln,
+                grouped_comments,
+                nb_res_comments,
+                warnings)
         if show_reviews:
-            if CFG_WEBCOMMENT_ALLOW_REVIEWS: # ranked comments
-                #calculate average score
+            if CFG_WEBCOMMENT_ALLOW_REVIEWS:  # ranked comments
+                # calculate average score
                 avg_score = calculate_avg_score(res_reviews)
                 if voted > 0:
                     try:
-                        raise InvenioWebCommentWarning(_('Your feedback has been recorded, many thanks.'))
+                        raise InvenioWebCommentWarning(
+                            _('Your feedback has been recorded, many thanks.'))
                     except InvenioWebCommentWarning as exc:
                         register_exception(stream='warning')
                         warnings.append((exc.message, 'green'))
-                    #warnings.append(('WRN_WEBCOMMENT_FEEDBACK_RECORDED_GREEN_TEXT',))
+                    # warnings.append(('WRN_WEBCOMMENT_FEEDBACK_RECORDED_GREEN_TEXT',))
                 elif voted == 0:
                     try:
-                        raise InvenioWebCommentWarning(_('Your feedback could not be recorded, please try again.'))
+                        raise InvenioWebCommentWarning(
+                            _('Your feedback could not be recorded, please try again.'))
                     except InvenioWebCommentWarning as exc:
                         register_exception(stream='warning')
                         warnings.append((exc.message, ''))
-                    #warnings.append(('WRN_WEBCOMMENT_FEEDBACK_NOT_RECORDED_RED_TEXT',))
-                grouped_reviews = group_comments_by_round(first_res_reviews, ranking=0)
-                reviews = webcomment_templates.tmpl_get_first_comments_with_ranking(recID, ln, grouped_reviews, nb_res_reviews, avg_score, warnings)
+                    # warnings.append(('WRN_WEBCOMMENT_FEEDBACK_NOT_RECORDED_RED_TEXT',))
+                grouped_reviews = group_comments_by_round(
+                    first_res_reviews,
+                    ranking=0)
+                reviews = webcomment_templates.tmpl_get_first_comments_with_ranking(
+                    recID,
+                    ln,
+                    grouped_reviews,
+                    nb_res_reviews,
+                    avg_score,
+                    warnings)
         return (comments, reviews)
     # remark
     else:
         return(webcomment_templates.tmpl_get_first_remarks(first_res_comments, ln, nb_res_comments), None)
+
 
 def group_comments_by_round(comments, ranking=0):
     """
@@ -1500,8 +1684,9 @@ def group_comments_by_round(comments, ranking=0):
             comment_rounds[comment_round_name] = []
             ordered_comment_round_names.append(comment_round_name)
         comment_rounds[comment_round_name].append(comment)
-    return [(comment_round_name, comment_rounds[comment_round_name]) \
+    return [(comment_round_name, comment_rounds[comment_round_name])
             for comment_round_name in ordered_comment_round_names]
+
 
 def calculate_avg_score(res):
     """
@@ -1517,7 +1702,7 @@ def calculate_avg_score(res):
         if comment[c_star_score] > 0:
             avg_score += comment[c_star_score]
             nb_reviews += 1
-    if nb_reviews ==  0:
+    if nb_reviews == 0:
         return 0.0
     avg_score = avg_score / nb_reviews
     avg_score_unit = avg_score - math.floor(avg_score)
@@ -1530,6 +1715,7 @@ def calculate_avg_score(res):
     if avg_score > 5:
         avg_score = 5.0
     return avg_score
+
 
 def perform_request_add_comment_or_remark(recID=0,
                                           uid=-1,
@@ -1580,11 +1766,12 @@ def perform_request_add_comment_or_remark(recID=0,
     actions = ['DISPLAY', 'REPLY', 'SUBMIT']
     _ = gettext_set_language(ln)
 
-    ## check arguments
+    # check arguments
     check_recID_is_in_range(recID, warnings, ln)
     if uid <= 0:
         try:
-            raise InvenioWebCommentError(_('%(uid)s is an invalid user ID.', uid=uid))
+            raise InvenioWebCommentError(
+                _('%(uid)s is an invalid user ID.', uid=uid))
         except InvenioWebCommentError as exc:
             register_exception()
             body = webcomment_templates.tmpl_error(exc.message, ln)
@@ -1603,17 +1790,34 @@ def perform_request_add_comment_or_remark(recID=0,
     # show the form
     if action == 'DISPLAY':
         if reviews and CFG_WEBCOMMENT_ALLOW_REVIEWS:
-            return webcomment_templates.tmpl_add_comment_form_with_ranking(recID, uid, nickname, ln, msg, score, note, warnings, can_attach_files=can_attach_files)
+            return webcomment_templates.tmpl_add_comment_form_with_ranking(
+                recID,
+                uid,
+                nickname,
+                ln,
+                msg,
+                score,
+                note,
+                warnings,
+                can_attach_files=can_attach_files)
         elif not reviews and CFG_WEBCOMMENT_ALLOW_COMMENTS:
-            return webcomment_templates.tmpl_add_comment_form(recID, uid, nickname, ln, msg, warnings, can_attach_files=can_attach_files)
+            return webcomment_templates.tmpl_add_comment_form(
+                recID,
+                uid,
+                nickname,
+                ln,
+                msg,
+                warnings,
+                can_attach_files=can_attach_files)
         else:
             try:
-                raise InvenioWebCommentError(_('Comments on records have been disallowed by the administrator.'))
+                raise InvenioWebCommentError(
+                    _('Comments on records have been disallowed by the administrator.'))
             except InvenioWebCommentError as exc:
                 register_exception(req=req)
                 body = webcomment_templates.tmpl_error(exc.message, ln)
                 return body
-            #errors.append(('ERR_WEBCOMMENT_COMMENTS_NOT_ALLOWED',))
+            # errors.append(('ERR_WEBCOMMENT_COMMENTS_NOT_ALLOWED',))
 
     elif action == 'REPLY':
         if reviews and CFG_WEBCOMMENT_ALLOW_REVIEWS:
@@ -1623,8 +1827,17 @@ def perform_request_add_comment_or_remark(recID=0,
                 register_exception(req=req)
                 body = webcomment_templates.tmpl_error(exc.message, ln)
                 return body
-            #errors.append(('ERR_WEBCOMMENT_REPLY_REVIEW',))
-            return webcomment_templates.tmpl_add_comment_form_with_ranking(recID, uid, nickname, ln, msg, score, note, warnings, can_attach_files=can_attach_files)
+            # errors.append(('ERR_WEBCOMMENT_REPLY_REVIEW',))
+            return webcomment_templates.tmpl_add_comment_form_with_ranking(
+                recID,
+                uid,
+                nickname,
+                ln,
+                msg,
+                score,
+                note,
+                warnings,
+                can_attach_files=can_attach_files)
         elif not reviews and CFG_WEBCOMMENT_ALLOW_COMMENTS:
             textual_msg = msg
             if comID > 0:
@@ -1632,9 +1845,13 @@ def perform_request_add_comment_or_remark(recID=0,
                 if comment:
                     user_info = get_user_info(comment[2])
                     if user_info:
-                        date_creation = convert_datetext_to_dategui(str(comment[4]))
-                        # Build two msg: one mostly textual, the other one with HTML markup, for the CkEditor.
-                        msg = _("%(x_name)s wrote on %(x_date)s:")% {'x_name': user_info[2], 'x_date': date_creation}
+                        date_creation = convert_datetext_to_dategui(
+                            str(comment[4]))
+                        # Build two msg: one mostly textual, the other one with
+                        # HTML markup, for the CkEditor.
+                        msg = _("%(x_name)s wrote on %(x_date)s:") % {
+                            'x_name': user_info[2],
+                            'x_date': date_creation}
                         textual_msg = msg
                         # 1 For CkEditor input
                         msg += '\n\n'
@@ -1643,10 +1860,13 @@ def perform_request_add_comment_or_remark(recID=0,
                         # Now that we have a text-quoted version, transform into
                         # something that CkEditor likes, using <blockquote> that
                         # do still enable users to insert comments inline
-                        msg = email_quoted_txt2html(text=msg,
-                                                    indent_html=('<blockquote><div>', '&nbsp;&nbsp;</div></blockquote>'),
-                                                    linebreak_html="&nbsp;<br/>",
-                                                    indent_block=False)
+                        msg = email_quoted_txt2html(
+                            text=msg,
+                            indent_html=(
+                                '<blockquote><div>',
+                                '&nbsp;&nbsp;</div></blockquote>'),
+                            linebreak_html="&nbsp;<br/>",
+                            indent_block=False)
                         # Add some space for users to easily add text
                         # around the quoted message
                         msg = '<br/>' + msg + '<br/>'
@@ -1658,108 +1878,171 @@ def perform_request_add_comment_or_remark(recID=0,
                         textual_msg += "\n\n"
                         textual_msg += comment[3]
                         textual_msg = email_quote_txt(text=textual_msg)
-            return webcomment_templates.tmpl_add_comment_form(recID, uid, nickname, ln, msg, warnings, textual_msg, can_attach_files=can_attach_files, reply_to=comID)
+            return webcomment_templates.tmpl_add_comment_form(
+                recID,
+                uid,
+                nickname,
+                ln,
+                msg,
+                warnings,
+                textual_msg,
+                can_attach_files=can_attach_files,
+                reply_to=comID)
         else:
             try:
-                raise InvenioWebCommentError(_('Comments on records have been disallowed by the administrator.'))
+                raise InvenioWebCommentError(
+                    _('Comments on records have been disallowed by the administrator.'))
             except InvenioWebCommentError as exc:
                 register_exception(req=req)
                 body = webcomment_templates.tmpl_error(exc.message, ln)
                 return body
-            #errors.append(('ERR_WEBCOMMENT_COMMENTS_NOT_ALLOWED',))
+            # errors.append(('ERR_WEBCOMMENT_COMMENTS_NOT_ALLOWED',))
 
     # check before submitting form
     elif action == 'SUBMIT':
         if reviews and CFG_WEBCOMMENT_ALLOW_REVIEWS:
-            if note.strip() in ["", "None"] and not CFG_WEBCOMMENT_ALLOW_SHORT_REVIEWS:
+            if note.strip() in [
+                    "", "None"] and not CFG_WEBCOMMENT_ALLOW_SHORT_REVIEWS:
                 try:
-                    raise InvenioWebCommentWarning(_('You must enter a title.'))
+                    raise InvenioWebCommentWarning(
+                        _('You must enter a title.'))
                 except InvenioWebCommentWarning as exc:
                     register_exception(stream='warning', req=req)
                     warnings.append((exc.message, ''))
-                #warnings.append(('WRN_WEBCOMMENT_ADD_NO_TITLE',))
+                # warnings.append(('WRN_WEBCOMMENT_ADD_NO_TITLE',))
             if score == 0 or score > 5:
                 try:
-                    raise InvenioWebCommentWarning(_('You must choose a score.'))
+                    raise InvenioWebCommentWarning(
+                        _('You must choose a score.'))
                 except InvenioWebCommentWarning as exc:
                     register_exception(stream='warning', req=req)
                     warnings.append((exc.message, ''))
-                #warnings.append(("WRN_WEBCOMMENT_ADD_NO_SCORE",))
-        if msg.strip() in ["", "None"] and not CFG_WEBCOMMENT_ALLOW_SHORT_REVIEWS:
+                # warnings.append(("WRN_WEBCOMMENT_ADD_NO_SCORE",))
+        if msg.strip() in [
+                "", "None"] and not CFG_WEBCOMMENT_ALLOW_SHORT_REVIEWS:
             try:
                 raise InvenioWebCommentWarning(_('You must enter a text.'))
             except InvenioWebCommentWarning as exc:
                 register_exception(stream='warning', req=req)
                 warnings.append((exc.message, ''))
-            #warnings.append(('WRN_WEBCOMMENT_ADD_NO_BODY',))
+            # warnings.append(('WRN_WEBCOMMENT_ADD_NO_BODY',))
         # if no warnings, submit
         if len(warnings) == 0:
             if reviews:
                 if check_user_can_review(recID, client_ip_address, uid):
-                    success = query_add_comment_or_remark(reviews, recID=recID, uid=uid, msg=msg,
-                                                          note=note, score=score, priority=0,
-                                                          client_ip_address=client_ip_address,
-                                                          editor_type=editor_type,
-                                                          req=req,
-                                                          reply_to=comID)
+                    success = query_add_comment_or_remark(
+                        reviews,
+                        recID=recID,
+                        uid=uid,
+                        msg=msg,
+                        note=note,
+                        score=score,
+                        priority=0,
+                        client_ip_address=client_ip_address,
+                        editor_type=editor_type,
+                        req=req,
+                        reply_to=comID)
                 else:
                     try:
-                        raise InvenioWebCommentWarning(_('You already wrote a review for this record.'))
+                        raise InvenioWebCommentWarning(
+                            _('You already wrote a review for this record.'))
                     except InvenioWebCommentWarning as exc:
                         register_exception(stream='warning', req=req)
                         warnings.append((exc.message, ''))
-                    #warnings.append('WRN_WEBCOMMENT_CANNOT_REVIEW_TWICE')
+                    # warnings.append('WRN_WEBCOMMENT_CANNOT_REVIEW_TWICE')
                     success = 1
             else:
                 if check_user_can_comment(recID, client_ip_address, uid):
-                    success = query_add_comment_or_remark(reviews, recID=recID, uid=uid, msg=msg,
-                                                          note=note, score=score, priority=0,
-                                                          client_ip_address=client_ip_address,
-                                                          editor_type=editor_type,
-                                                          req=req,
-
-                                                          reply_to=comID, attached_files=attached_files)
+                    success = query_add_comment_or_remark(
+                        reviews,
+                        recID=recID,
+                        uid=uid,
+                        msg=msg,
+                        note=note,
+                        score=score,
+                        priority=0,
+                        client_ip_address=client_ip_address,
+                        editor_type=editor_type,
+                        req=req,
+                        reply_to=comID,
+                        attached_files=attached_files)
                     if success > 0 and subscribe:
                         subscribe_user_to_discussion(recID, uid)
                 else:
                     try:
-                        raise InvenioWebCommentWarning(_('You already posted a comment short ago. Please retry later.'))
+                        raise InvenioWebCommentWarning(
+                            _('You already posted a comment short ago. Please retry later.'))
                     except InvenioWebCommentWarning as exc:
                         register_exception(stream='warning', req=req)
                         warnings.append((exc.message, ''))
-                    #warnings.append('WRN_WEBCOMMENT_TIMELIMIT')
+                    # warnings.append('WRN_WEBCOMMENT_TIMELIMIT')
                     success = 1
             if success > 0:
                 if CFG_WEBCOMMENT_ADMIN_NOTIFICATION_LEVEL > 0:
                     notify_admin_of_new_comment(comID=success)
-                return webcomment_templates.tmpl_add_comment_successful(recID, ln, reviews, warnings, success)
+                return webcomment_templates.tmpl_add_comment_successful(
+                    recID, ln, reviews, warnings, success)
             else:
                 try:
-                    raise InvenioWebCommentError(_('Failed to insert your comment to the database. Please try again.'))
+                    raise InvenioWebCommentError(
+                        _('Failed to insert your comment to the database. Please try again.'))
                 except InvenioWebCommentError as exc:
                     register_exception(req=req)
                     body = webcomment_templates.tmpl_error(exc.message, ln)
                     return body
-                #errors.append(('ERR_WEBCOMMENT_DB_INSERT_ERROR'))
-        # if are warnings or if inserting comment failed, show user where warnings are
+                # errors.append(('ERR_WEBCOMMENT_DB_INSERT_ERROR'))
+        # if are warnings or if inserting comment failed, show user where
+        # warnings are
         if reviews and CFG_WEBCOMMENT_ALLOW_REVIEWS:
-            return webcomment_templates.tmpl_add_comment_form_with_ranking(recID, uid, nickname, ln, msg, score, note, warnings, can_attach_files=can_attach_files)
+            return webcomment_templates.tmpl_add_comment_form_with_ranking(
+                recID,
+                uid,
+                nickname,
+                ln,
+                msg,
+                score,
+                note,
+                warnings,
+                can_attach_files=can_attach_files)
         else:
-            return webcomment_templates.tmpl_add_comment_form(recID, uid, nickname, ln, msg, warnings, can_attach_files=can_attach_files)
+            return webcomment_templates.tmpl_add_comment_form(
+                recID,
+                uid,
+                nickname,
+                ln,
+                msg,
+                warnings,
+                can_attach_files=can_attach_files)
     # unknown action send to display
     else:
         try:
-            raise InvenioWebCommentWarning(_('Unknown action --> showing you the default add comment form.'))
+            raise InvenioWebCommentWarning(
+                _('Unknown action --> showing you the default add comment form.'))
         except InvenioWebCommentWarning as exc:
             register_exception(stream='warning', req=req)
             warnings.append((exc.message, ''))
-        #warnings.append(('WRN_WEBCOMMENT_ADD_UNKNOWN_ACTION',))
+        # warnings.append(('WRN_WEBCOMMENT_ADD_UNKNOWN_ACTION',))
         if reviews and CFG_WEBCOMMENT_ALLOW_REVIEWS:
-            return webcomment_templates.tmpl_add_comment_form_with_ranking(recID, uid, ln, msg, score, note, warnings, can_attach_files=can_attach_files)
+            return webcomment_templates.tmpl_add_comment_form_with_ranking(
+                recID,
+                uid,
+                ln,
+                msg,
+                score,
+                note,
+                warnings,
+                can_attach_files=can_attach_files)
         else:
-            return webcomment_templates.tmpl_add_comment_form(recID, uid, ln, msg, warnings, can_attach_files=can_attach_files)
+            return webcomment_templates.tmpl_add_comment_form(
+                recID,
+                uid,
+                ln,
+                msg,
+                warnings,
+                can_attach_files=can_attach_files)
 
     return ''
+
 
 def notify_admin_of_new_comment(comID):
     """
@@ -1819,24 +2102,25 @@ RECORD CONCERNED:
 ADMIN OPTIONS:
 To moderate the %(comment_or_review)s go to %(siteurl)s/%(CFG_SITE_RECORD)s/%(recID)s/%(comments_or_reviews)s/display?%(arguments)s
     ''' % \
-        {   'comment_or_review'     : star_score >  0 and 'review' or 'comment',
+        {'comment_or_review': star_score > 0 and 'review' or 'comment',
             'comment_or_review_caps': star_score > 0 and 'REVIEW' or 'COMMENT',
-            'comments_or_reviews'   : star_score >  0 and 'reviews' or 'comments',
-            'date'                  : date_creation,
-            'nickname'              : nickname,
-            'email'                 : email,
-            'uid'                   : id_user,
-            'recID'                 : id_bibrec,
-            'record_details'        : record_info,
-            'comID'                 : comID2,
-            'review_stuff'          : star_score > 0 and review_stuff or "",
-            'body'                  : body.replace('<br />','\n'),
-            'siteurl'               : CFG_SITE_URL,
-            'CFG_SITE_RECORD'        : CFG_SITE_RECORD,
-            'arguments'             : 'ln=en&do=od#%s' % comID
-        }
+            'comments_or_reviews': star_score > 0 and 'reviews' or 'comments',
+            'date': date_creation,
+            'nickname': nickname,
+            'email': email,
+            'uid': id_user,
+            'recID': id_bibrec,
+            'record_details': record_info,
+            'comID': comID2,
+            'review_stuff': star_score > 0 and review_stuff or "",
+            'body': body.replace('<br />', '\n'),
+            'siteurl': CFG_SITE_URL,
+            'CFG_SITE_RECORD': CFG_SITE_RECORD,
+            'arguments': 'ln=en&do=od#%s' % comID
+         }
 
-    from_addr = '%s WebComment <%s>' % (CFG_SITE_NAME, CFG_WEBALERT_ALERT_ENGINE_EMAIL)
+    from_addr = '%s WebComment <%s>' % (
+        CFG_SITE_NAME, CFG_WEBALERT_ALERT_ENGINE_EMAIL)
     comment_collection = get_comment_collection(comID)
     to_addrs = get_collection_moderators(comment_collection)
 
@@ -1844,9 +2128,11 @@ To moderate the %(comment_or_review)s go to %(siteurl)s/%(CFG_SITE_RECORD)s/%(re
     report_nums = get_fieldvalues(id_bibrec, "037__a")
     report_nums += get_fieldvalues(id_bibrec, "088__a")
     report_nums = ', '.join(report_nums)
-    subject = "A new comment/review has just been posted [%s|%s]" % (rec_collection, report_nums)
+    subject = "A new comment/review has just been posted [%s|%s]" % (
+        rec_collection, report_nums)
 
     send_email(from_addr, to_addrs, subject, out)
+
 
 def check_recID_is_in_range(recID, warnings=[], ln=CFG_SITE_LANG):
     """
@@ -1863,49 +2149,58 @@ def check_recID_is_in_range(recID, warnings=[], ln=CFG_SITE_LANG):
     except:
         pass
 
-    if type(recID) is int:
+    if isinstance(recID, int):
         if recID > 0:
             from invenio.legacy.search_engine import record_exists
             success = record_exists(recID)
             if success == 1:
-                return (1,"")
+                return (1, "")
             else:
                 try:
                     if success == -1:
                         status = 'deleted'
-                        raise InvenioWebCommentWarning(_('The record has been deleted.'))
+                        raise InvenioWebCommentWarning(
+                            _('The record has been deleted.'))
                     else:
                         status = 'inexistant'
-                        raise InvenioWebCommentWarning(_('Record ID %(x_rec)s does not exist in the database.', x_rec=recID))
+                        raise InvenioWebCommentWarning(
+                            _('Record ID %(x_rec)s does not exist in the database.', x_rec=recID))
                 except InvenioWebCommentWarning as exc:
                     register_exception(stream='warning')
                     warnings.append((exc.message, ''))
                 #warnings.append(('ERR_WEBCOMMENT_RECID_INEXISTANT', recID))
-                return (0, webcomment_templates.tmpl_record_not_found(status=status, recID=recID, ln=ln))
+                return (0, webcomment_templates.tmpl_record_not_found(
+                    status=status, recID=recID, ln=ln))
         elif recID == 0:
             try:
                 raise InvenioWebCommentWarning(_('No record ID was given.'))
             except InvenioWebCommentWarning as exc:
                 register_exception(stream='warning')
                 warnings.append((exc.message, ''))
-            #warnings.append(('ERR_WEBCOMMENT_RECID_MISSING',))
-            return (0, webcomment_templates.tmpl_record_not_found(status='missing', recID=recID, ln=ln))
+            # warnings.append(('ERR_WEBCOMMENT_RECID_MISSING',))
+            return (0, webcomment_templates.tmpl_record_not_found(
+                status='missing', recID=recID, ln=ln))
         else:
             try:
-                raise InvenioWebCommentWarning(_('Record ID %(recid)s is an invalid ID.', recid=recID))
+                raise InvenioWebCommentWarning(
+                    _('Record ID %(recid)s is an invalid ID.', recid=recID))
             except InvenioWebCommentWarning as exc:
                 register_exception(stream='warning')
                 warnings.append((exc.message, ''))
             #warnings.append(('ERR_WEBCOMMENT_RECID_INVALID', recID))
-            return (0, webcomment_templates.tmpl_record_not_found(status='invalid', recID=recID, ln=ln))
+            return (0, webcomment_templates.tmpl_record_not_found(
+                status='invalid', recID=recID, ln=ln))
     else:
         try:
-            raise InvenioWebCommentWarning(_('Record ID %(recid)s is not a number.', recid=recID))
+            raise InvenioWebCommentWarning(
+                _('Record ID %(recid)s is not a number.', recid=recID))
         except InvenioWebCommentWarning as exc:
             register_exception(stream='warning')
             warnings.append((exc.message, ''))
         #warnings.append(('ERR_WEBCOMMENT_RECID_NAN', recID))
-        return (0, webcomment_templates.tmpl_record_not_found(status='nan', recID=recID, ln=ln))
+        return (0, webcomment_templates.tmpl_record_not_found(
+            status='nan', recID=recID, ln=ln))
+
 
 def check_int_arg_is_in_range(value, name, gte_value, lte_value=None):
     """
@@ -1918,7 +2213,7 @@ def check_int_arg_is_in_range(value, name, gte_value, lte_value=None):
     @return: boolean (1=true, 0=false)
     """
 
-    if type(value) is not int:
+    if not isinstance(value, int):
         try:
             raise InvenioWebCommentError('%s is not a number.' % value)
         except InvenioWebCommentError as exc:
@@ -1949,6 +2244,7 @@ def check_int_arg_is_in_range(value, name, gte_value, lte_value=None):
             return 0
     return 1
 
+
 def get_mini_reviews(recid, ln=CFG_SITE_LANG):
     """
     Returns the web controls to add reviews to a record from the
@@ -1964,9 +2260,13 @@ def get_mini_reviews(recid, ln=CFG_SITE_LANG):
 
     reviews = query_retrieve_comments_or_remarks(recid, ranking=1)
 
-    return webcomment_templates.tmpl_mini_review(recid, ln, action=action,
-                                                 avg_score=calculate_avg_score(reviews),
-                                                 nb_comments_total=len(reviews))
+    return webcomment_templates.tmpl_mini_review(
+        recid,
+        ln,
+        action=action,
+        avg_score=calculate_avg_score(reviews),
+        nb_comments_total=len(reviews))
+
 
 def check_user_can_view_comments(user_info, recid):
     """Check if the user is authorized to view comments for given
@@ -1980,10 +2280,15 @@ def check_user_can_view_comments(user_info, recid):
         return (auth_code, auth_msg)
 
     # Check if user can view the comments
-    ## But first can we find an authorization for this case action,
-    ## for this collection?
+    # But first can we find an authorization for this case action,
+    # for this collection?
     record_primary_collection = guess_primary_collection_of_a_record(recid)
-    return acc_authorize_action(user_info, 'viewcomment', authorized_if_no_roles=True, collection=record_primary_collection)
+    return acc_authorize_action(
+        user_info,
+        'viewcomment',
+        authorized_if_no_roles=True,
+        collection=record_primary_collection)
+
 
 def check_user_can_view_comment(user_info, comid, restriction=None):
     """Check if the user is authorized to view a particular comment,
@@ -2006,8 +2311,10 @@ def check_user_can_view_comment(user_info, comid, restriction=None):
         else:
             return (1, 'Comment %i does not exist' % comid)
     if restriction == "":
-        return  (0, '')
-    return acc_authorize_action(user_info, 'viewrestrcomment', status=restriction)
+        return (0, '')
+    return acc_authorize_action(
+        user_info, 'viewrestrcomment', status=restriction)
+
 
 def check_user_can_send_comments(user_info, recid):
     """Check if the user is authorized to comment the given
@@ -2016,9 +2323,14 @@ def check_user_can_send_comments(user_info, recid):
 
     Returns the same type as acc_authorize_action
     """
-    ## First can we find an authorization for this case, action + collection
+    # First can we find an authorization for this case, action + collection
     record_primary_collection = guess_primary_collection_of_a_record(recid)
-    return acc_authorize_action(user_info, 'sendcomment', authorized_if_no_roles=True, collection=record_primary_collection)
+    return acc_authorize_action(
+        user_info,
+        'sendcomment',
+        authorized_if_no_roles=True,
+        collection=record_primary_collection)
+
 
 def check_comment_belongs_to_record(comid, recid):
     """
@@ -2036,6 +2348,7 @@ def check_comment_belongs_to_record(comid, recid):
 
     return False
 
+
 def check_user_can_attach_file_to_comments(user_info, recid):
     """Check if the user is authorized to attach a file to comments
     for given recid. This function does not check that user can view
@@ -2043,10 +2356,15 @@ def check_user_can_attach_file_to_comments(user_info, recid):
 
     Returns the same type as acc_authorize_action
     """
-    ## First can we find an authorization for this case action, for
-    ## this collection?
+    # First can we find an authorization for this case action, for
+    # this collection?
     record_primary_collection = guess_primary_collection_of_a_record(recid)
-    return acc_authorize_action(user_info, 'attachcommentfile', authorized_if_no_roles=False, collection=record_primary_collection)
+    return acc_authorize_action(
+        user_info,
+        'attachcommentfile',
+        authorized_if_no_roles=False,
+        collection=record_primary_collection)
+
 
 def toggle_comment_visibility(uid, comid, collapse, recid):
     """
@@ -2091,6 +2409,7 @@ def toggle_comment_visibility(uid, comid, collapse, recid):
         run_sql(query, params)
         return False
 
+
 def get_user_collapsed_comments_for_record(uid, recid):
     """
     Get the comments collapsed for given user on given recid page
@@ -2102,6 +2421,7 @@ def get_user_collapsed_comments_for_record(uid, recid):
     query = """SELECT "id_cmtRECORDCOMMENT" from "cmtCOLLAPSED" WHERE id_user=%s and id_bibrec=%s"""
     params = (uid, recid)
     return [res[0] for res in run_sql(query, params)]
+
 
 def is_comment_deleted(comid):
     """
@@ -2116,6 +2436,7 @@ def is_comment_deleted(comid):
         return True
 
     return False
+
 
 def perform_display_your_comments(user_info,
                                   page_number=1,
@@ -2152,20 +2473,26 @@ def perform_display_your_comments(user_info,
     nb_total_pages = 0
 
     if selected_display_format_option in ('rc', 'co'):
-        nb_total_results = run_sql("""SELECT count(id) from "cmtRECORDCOMMENT" WHERE id_user=%s AND star_score = 0""", \
-                                   (user_info['uid'], ))[0][0]
+        nb_total_results = run_sql(
+            """SELECT count(id) from "cmtRECORDCOMMENT" WHERE id_user=%s AND star_score = 0""",
+            (user_info['uid'],
+             ))[0][0]
     else:
         if selected_order_by_option in ('grlf', 'grof'):
-            nb_total_results = run_sql("""SELECT count(distinct(id_bibrec)) from "cmtRECORDCOMMENT" WHERE id_user=%s AND star_score = 0""", \
-                                       (user_info['uid'], ))[0][0]
+            nb_total_results = run_sql(
+                """SELECT count(distinct(id_bibrec)) from "cmtRECORDCOMMENT" WHERE id_user=%s AND star_score = 0""",
+                (user_info['uid'],
+                 ))[0][0]
         else:
-            nb_total_results = run_sql("""SELECT count(id_bibrec) from "cmtRECORDCOMMENT" WHERE id_user=%s AND star_score = 0""", \
-                                       (user_info['uid'], ))[0][0]
+            nb_total_results = run_sql(
+                """SELECT count(id_bibrec) from "cmtRECORDCOMMENT" WHERE id_user=%s AND star_score = 0""",
+                (user_info['uid'],
+                 ))[0][0]
     if page_number < 1:
         page_number = 1
 
     if selected_display_number_option != 'all' and \
-           not selected_display_number_option.isdigit():
+            not selected_display_number_option.isdigit():
         # must be some garbage
         selected_display_number_option = 'all'
 
@@ -2180,28 +2507,42 @@ def perform_display_your_comments(user_info,
         query = """SELECT cmt.id_bibrec, cmt.id, cmt.date_creation, cmt.body, cmt.status, cmt."in_reply_to_id_cmtRECORDCOMMENT" FROM "cmtRECORDCOMMENT" as cmt left join (SELECT min(date_creation) as mindatecreation, id_bibrec FROM "cmtRECORDCOMMENT" WHERE id_user=%s AND star_score = 0 GROUP BY id_bibrec) as grp on cmt.id_bibrec = grp.id_bibrec WHERE id_user=%s AND star_score = 0 ORDER BY grp.mindatecreation ASC"""
 
     if selected_display_number_option.isdigit():
-        selected_display_number_option_as_int = int(selected_display_number_option)
+        selected_display_number_option_as_int = int(
+            selected_display_number_option)
         if selected_display_number_option_as_int < 5:
             selected_display_number_option_as_int = 5
-            selected_display_number_option = str(selected_display_number_option_as_int)
+            selected_display_number_option = str(
+                selected_display_number_option_as_int)
         from_index = (page_number - 1) * int(selected_display_number_option)
         query_params += ' LIMIT ' + \
                         str(from_index) + \
                         ',' + \
                         str(int(selected_display_number_option))
-        nb_total_pages = int(math.ceil(float(nb_total_results) / selected_display_number_option_as_int))
-
+        nb_total_pages = int(
+            math.ceil(
+                float(nb_total_results) /
+                selected_display_number_option_as_int))
 
     if selected_order_by_option in ("grlf", "grof"):
-        res = run_sql(query + query_params, (user_info['uid'], user_info['uid']))
+        res = run_sql(
+            query +
+            query_params,
+            (user_info['uid'],
+             user_info['uid']))
     else:
-        res = run_sql("""SELECT id_bibrec, id, date_creation, body, status, "in_reply_to_id_cmtRECORDCOMMENT" FROM "cmtRECORDCOMMENT" WHERE id_user=%s AND star_score = 0""" + query_params, (user_info['uid'], ))
+        res = run_sql(
+            """SELECT id_bibrec, id, date_creation, body, status, "in_reply_to_id_cmtRECORDCOMMENT" FROM "cmtRECORDCOMMENT" WHERE id_user=%s AND star_score = 0""" +
+            query_params,
+            (user_info['uid'],
+             ))
 
-    return webcomment_templates.tmpl_your_comments(user_info, res,
-                                                   page_number=page_number,
-                                                   selected_order_by_option=selected_order_by_option,
-                                                   selected_display_number_option=selected_display_number_option,
-                                                   selected_display_format_option=selected_display_format_option,
-                                                   nb_total_results=nb_total_results,
-                                                   nb_total_pages=nb_total_pages,
-                                                   ln=ln)
+    return webcomment_templates.tmpl_your_comments(
+        user_info,
+        res,
+        page_number=page_number,
+        selected_order_by_option=selected_order_by_option,
+        selected_display_number_option=selected_display_number_option,
+        selected_display_format_option=selected_display_format_option,
+        nb_total_results=nb_total_results,
+        nb_total_pages=nb_total_pages,
+        ln=ln)

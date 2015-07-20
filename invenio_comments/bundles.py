@@ -23,7 +23,6 @@ from __future__ import unicode_literals
 
 from invenio.ext.assets import Bundle
 
-
 js = Bundle(
     'js/comments/comments.js',
     'js/comments/collapse.js',

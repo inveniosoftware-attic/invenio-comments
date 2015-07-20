@@ -21,7 +21,7 @@
 
 from flask import request
 
-from invenio.modules.comments.models import CmtRECORDCOMMENT
+from invenio_comments.models import CmtRECORDCOMMENT
 
 
 def comments_nb_counts():

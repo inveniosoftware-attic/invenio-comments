@@ -19,30 +19,26 @@
 
 """WebSearch Flask Blueprint."""
 
-from datetime import datetime
 import socket
+from datetime import datetime
 
-from flask import g, render_template, request, flash, redirect, url_for, \
-    current_app, abort, Blueprint
-
+from flask import Blueprint, abort, current_app, flash, g, redirect, \
+    render_template, request, url_for
 from flask_breadcrumbs import register_breadcrumb
 from flask_login import current_user, login_required
 from flask_menu import register_menu
 
-from invenio.base.i18n import _
 from invenio.base.decorators import templated
 from invenio.base.globals import cfg
-
+from invenio.base.i18n import _
 from invenio.ext.principal import permission_required
 from invenio.ext.sqlalchemy import db
-
+from invenio.utils.mail import email_quote_txt
 from invenio_records.utils import visible_collection_tabs
 from invenio_records.views import request_record
 
-from invenio.utils.mail import email_quote_txt
-
 from .forms import AddCmtRECORDCOMMENTForm, AddCmtRECORDCOMMENTFormReview
-from .models import CmtRECORDCOMMENT, CmtSUBSCRIPTION, CmtACTIONHISTORY
+from .models import CmtACTIONHISTORY, CmtRECORDCOMMENT, CmtSUBSCRIPTION
 from .utils import comments_nb_counts, reviews_nb_counts
 
 CFG_SITE_RECORD = 'record'
@@ -90,7 +86,7 @@ class CommentRights(object):
             count() == 0
 
     def can_view_restricted_comment(self, restriction):
-        #restriction =  self.comment.restriction
+        # restriction =  self.comment.restriction
         if restriction == "":
             return (0, '')
         return self.authorize_action(
