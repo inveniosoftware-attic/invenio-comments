@@ -23,8 +23,12 @@ from wtforms import HiddenField, SelectField, StringField, TextAreaField, \
     validators
 
 from invenio.base.i18n import _
-from invenio.modules.annotations.noteutils import HOWTO
 from invenio.utils.forms import InvenioBaseForm
+
+try:
+    from invenio_annotations.noteutils import HOWTO
+except ImportError:
+    HOWTO = ''
 
 
 class AddCmtRECORDCOMMENTForm(InvenioBaseForm):
