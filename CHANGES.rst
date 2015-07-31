@@ -24,6 +24,10 @@
 Changes
 =======
 
+Version 0.1.0 (release 2015-07-31)
+
+- Adds dependency to invenio-accounts and fixes affected imports.
+
 Version 0.1.0 (release 2015-07-21)
 
 - Initial public release.
