@@ -51,7 +51,7 @@ from invenio.legacy.dbquery import datetime_format, run_sql
 from invenio.legacy.search_engine import check_user_can_view_record, \
     guess_primary_collection_of_a_record
 from invenio.legacy.webuser import collect_user_info, get_email, get_user_info
-from invenio.modules.access.engine import acc_authorize_action
+from invenio_access.engine import acc_authorize_action
 from invenio.utils.date import convert_datestruct_to_datetext, \
     convert_datetext_to_dategui, datetext_default
 from invenio.utils.html import tidy_html
@@ -494,7 +494,7 @@ def get_collection_moderators(collection):
     """
     Return the list of comment moderators for the given collection.
     """
-    from invenio.modules.access.engine import acc_get_authorized_emails
+    from invenio_access.engine import acc_get_authorized_emails
 
     res = list(
         acc_get_authorized_emails(

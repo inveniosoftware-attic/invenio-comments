@@ -51,6 +51,7 @@ Invenio module that adds record commenting feature.
 - Paulo Cabral <paulo.cabral@cern.ch>
 - Peter Halliday <phalliday@cornell.edu>
 - Raquel Jimenez Encinar <raquel.jimenez.encinar@cern.ch>
+- Sami Hiltunen <sami.mikael.hiltunen@cern.ch>
 - Samuele Kaplun <samuele.kaplun@cern.ch>
 - Tibor Simko <tibor.simko@cern.ch>
 - Yoan Blanc <yoan.blanc@cern.ch>

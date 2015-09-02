@@ -68,7 +68,7 @@ class CommentRights(object):
         self.id_collection = 0  # FIXME
 
     def authorize_action(self, *args, **kwargs):
-        from invenio.modules.access.engine import acc_authorize_action
+        from invenio_access.engine import acc_authorize_action
         return acc_authorize_action(*args, **kwargs)
 
     def can_perform_action(self, action=None):
@@ -188,8 +188,8 @@ def add_review(recid):
                count=comments_nb_counts)
 def comments(recid):
     """Display comments."""
-    from invenio.modules.access.local_config import VIEWRESTRCOLL
-    from invenio.modules.access.mailcookie import \
+    from invenio_access.local_config import VIEWRESTRCOLL
+    from invenio_access.mailcookie import \
         mail_cookie_create_authorize_action
     from .api import check_user_can_view_comments
     auth_code, auth_msg = check_user_can_view_comments(current_user, recid)
@@ -222,8 +222,8 @@ def comments(recid):
                count=reviews_nb_counts)
 def reviews(recid):
     """Display reviews."""
-    from invenio.modules.access.local_config import VIEWRESTRCOLL
-    from invenio.modules.access.mailcookie import \
+    from invenio_access.local_config import VIEWRESTRCOLL
+    from invenio_access.mailcookie import \
         mail_cookie_create_authorize_action
     from .api import check_user_can_view_comments
     auth_code, auth_msg = check_user_can_view_comments(current_user, recid)
