@@ -37,11 +37,13 @@ requirements = [
     'Flask>=0.10.1',
     'six>=1.7.2',
     'invenio-access>=0.1.0',
-    'invenio-accounts>=0.1.0',
-    'invenio-records>=0.1.0',
+    'invenio-accounts>=0.1.2',
+    'invenio-records>=0.3.2',
 ]
 
 test_requirements = [
+    'unittest2>=1.1.0',
+    'Flask-Testing>=0.4.1',
     'pytest>=2.7.0',
     'pytest-cov>=1.8.0',
     'pytest-pep8>=1.0.6',
