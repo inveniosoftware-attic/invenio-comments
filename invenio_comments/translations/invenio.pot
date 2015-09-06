@@ -1,0 +1,288 @@
+# Translations template for invenio-comments.
+# Copyright (C) 2015 CERN
+# This file is distributed under the same license as the invenio-comments
+# project.
+# FIRST AUTHOR <EMAIL@ADDRESS>, 2015.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: invenio-comments 0.1.2.dev20150731\n"
+"Report-Msgid-Bugs-To: info@invenio-software.org\n"
+"POT-Creation-Date: 2015-09-06 20:47+0200\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.0\n"
+
+#: invenio_comments/api.py:192 invenio_comments/api.py:240
+msgid "Bad page number --> showing first page."
+msgstr ""
+
+#: invenio_comments/api.py:201
+msgid "Bad number of results per page --> showing 10 results per page."
+msgstr ""
+
+#: invenio_comments/api.py:211
+msgid "Bad display order --> showing most helpful first."
+msgstr ""
+
+#: invenio_comments/api.py:221
+msgid "Bad display order --> showing oldest first."
+msgstr ""
+
+#: invenio_comments/api.py:270 invenio_comments/api.py:1815
+#: invenio_comments/api.py:1894
+msgid "Comments on records have been disallowed by the administrator."
+msgstr ""
+
+#: invenio_comments/api.py:279 invenio_comments/api.py:305
+#: invenio_comments/api.py:1616 invenio_comments/api.py:1646
+msgid "Your feedback has been recorded, many thanks."
+msgstr ""
+
+#: invenio_comments/api.py:287
+msgid "You have already reported an abuse for this comment."
+msgstr ""
+
+#: invenio_comments/api.py:295
+msgid "The comment you have reported no longer exists."
+msgstr ""
+
+#: invenio_comments/api.py:313
+msgid "Sorry, you have already voted. This vote has not been recorded."
+msgstr ""
+
+#: invenio_comments/api.py:321
+msgid ""
+"You have been subscribed to this discussion. From now on, you will "
+"receive an email whenever a new comment is posted."
+msgstr ""
+
+#: invenio_comments/api.py:329
+msgid "You have been unsubscribed from this discussion."
+msgstr ""
+
+#: invenio_comments/api.py:1335
+#, python-format
+msgid "Record %(x_rec)i"
+msgstr ""
+
+#: invenio_comments/api.py:1346
+#, python-format
+msgid "%(report_number)s\"%(title)s\" has been reviewed"
+msgstr ""
+
+#: invenio_comments/api.py:1351
+#, python-format
+msgid "%(report_number)s\"%(title)s\" has been commented"
+msgstr ""
+
+#: invenio_comments/api.py:1602
+#, python-format
+msgid "%(recid)s is an invalid record ID"
+msgstr ""
+
+#: invenio_comments/api.py:1624 invenio_comments/api.py:1654
+msgid "Your feedback could not be recorded, please try again."
+msgstr ""
+
+#: invenio_comments/api.py:1774
+#, python-format
+msgid "%(uid)s is an invalid user ID."
+msgstr ""
+
+#: invenio_comments/api.py:1825
+msgid "Cannot reply to a review."
+msgstr ""
+
+#: invenio_comments/api.py:1852
+#, python-format
+msgid "%(x_name)s wrote on %(x_date)s:"
+msgstr ""
+
+#: invenio_comments/api.py:1908
+msgid "You must enter a title."
+msgstr ""
+
+#: invenio_comments/api.py:1916
+msgid "You must choose a score."
+msgstr ""
+
+#: invenio_comments/api.py:1924
+msgid "You must enter a text."
+msgstr ""
+
+#: invenio_comments/api.py:1948
+msgid "You already wrote a review for this record."
+msgstr ""
+
+#: invenio_comments/api.py:1974
+msgid "You already posted a comment short ago. Please retry later."
+msgstr ""
+
+#: invenio_comments/api.py:1988
+msgid "Failed to insert your comment to the database. Please try again."
+msgstr ""
+
+#: invenio_comments/api.py:2020
+msgid "Unknown action --> showing you the default add comment form."
+msgstr ""
+
+#: invenio_comments/api.py:2163
+msgid "The record has been deleted."
+msgstr ""
+
+#: invenio_comments/api.py:2167
+#, python-format
+msgid "Record ID %(x_rec)s does not exist in the database."
+msgstr ""
+
+#: invenio_comments/api.py:2176
+msgid "No record ID was given."
+msgstr ""
+
+#: invenio_comments/api.py:2186
+#, python-format
+msgid "Record ID %(recid)s is an invalid ID."
+msgstr ""
+
+#: invenio_comments/api.py:2196
+#, python-format
+msgid "Record ID %(recid)s is not a number."
+msgstr ""
+
+#: invenio_comments/forms.py:38
+msgid "Title"
+msgstr ""
+
+#: invenio_comments/forms.py:39
+msgid "Message"
+msgstr ""
+
+#: invenio_comments/forms.py:42
+msgid ""
+"Your message is too long, please edit it. Maximum size allowed is "
+"%{length}i characters."
+msgstr ""
+
+#: invenio_comments/forms.py:59
+msgid "Stars"
+msgstr ""
+
+#: invenio_comments/forms.py:59
+msgid "*"
+msgstr ""
+
+#: invenio_comments/forms.py:60
+msgid "**"
+msgstr ""
+
+#: invenio_comments/forms.py:61
+msgid "***"
+msgstr ""
+
+#: invenio_comments/forms.py:62
+msgid "****"
+msgstr ""
+
+#: invenio_comments/forms.py:63
+msgid "*****"
+msgstr ""
+
+#: invenio_comments/views.py:128
+msgid "Re: "
+msgstr ""
+
+#: invenio_comments/views.py:145
+msgid "Comment was sent"
+msgstr ""
+
+#: invenio_comments/views.py:174
+msgid "Review was sent"
+msgstr ""
+
+#: invenio_comments/views.py:184
+msgid "Comments"
+msgstr ""
+
+#: invenio_comments/views.py:200 invenio_comments/views.py:234
+msgid "Authorization failure"
+msgstr ""
+
+#: invenio_comments/views.py:218
+msgid "Reviews"
+msgstr ""
+
+#: invenio_comments/views.py:259
+msgid "Comment has been reported."
+msgstr ""
+
+#: invenio_comments/views.py:261
+msgid "Comment has been already reported."
+msgstr ""
+
+#: invenio_comments/views.py:280
+msgid "Thank you for your vote."
+msgstr ""
+
+#: invenio_comments/views.py:282
+msgid "You can not vote for this comment."
+msgstr ""
+
+#: invenio_comments/views.py:319
+msgid "You have been successfully subscribed"
+msgstr ""
+
+#: invenio_comments/views.py:321
+msgid "You are already subscribed"
+msgstr ""
+
+#: invenio_comments/views.py:341
+msgid "You have been successfully unsubscribed"
+msgstr ""
+
+#: invenio_comments/views.py:343
+msgid "You are already unsubscribed"
+msgstr ""
+
+#: invenio_comments/views.py:354 invenio_comments/views.py:355
+#: invenio_comments/templates/comments/subscriptions_base.html:20
+msgid "Your comment subscriptions"
+msgstr ""
+
+#: invenio_comments/templates/comments/add_review_base.html:35
+msgid "Send"
+msgstr ""
+
+#: invenio_comments/templates/comments/add_review_base.html:54
+msgid "Write a review"
+msgstr ""
+
+#: invenio_comments/templates/comments/subscriptions_base.html:40
+msgid "Record"
+msgstr ""
+
+#: invenio_comments/templates/comments/subscriptions_base.html:41
+msgid "Subscription date"
+msgstr ""
+
+#: invenio_comments/templates/comments/subscriptions_base.html:42
+msgid "Action"
+msgstr ""
+
+#: invenio_comments/templates/comments/subscriptions_base.html:48
+msgid "Delete Selected"
+msgstr ""
+
+#: invenio_comments/templates/comments/subscriptions_base.html:56
+msgid "No subscriptions"
+msgstr ""
+
+#: invenio_comments/templates/comments/subscriptions_base.html:71
+msgid "Delete"
+msgstr ""
+
