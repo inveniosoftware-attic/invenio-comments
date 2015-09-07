@@ -17,20 +17,21 @@
 # along with Invenio; if not, write to the Free Software Foundation, Inc.,
 # 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
 
-""" Comments and reviews for records """
+"""Comment and review for records."""
 
-__revision__ = "$Id$"
-
-# non Invenio imports:
 import cgi
-import math
-import os
-import re
-import shutil
-import time
-from datetime import datetime, timedelta
 
-from six import iteritems
+import math
+
+import os
+
+import re
+
+import shutil
+
+import time
+
+from datetime import datetime, timedelta
 
 from invenio.base.i18n import gettext_set_language, wash_language
 from invenio.config import CFG_COMMENTSDIR, CFG_SITE_LANG, CFG_SITE_NAME, \
@@ -44,13 +45,12 @@ from invenio.config import CFG_COMMENTSDIR, CFG_SITE_LANG, CFG_SITE_NAME, \
     CFG_WEBCOMMENT_RESTRICTION_DATAFIELD, CFG_WEBCOMMENT_ROUND_DATAFIELD, \
     CFG_WEBCOMMENT_TIMELIMIT_PROCESSING_COMMENTS_IN_SECONDS
 from invenio.ext.email import send_email
+from invenio.ext.login.legacy_user import UserInfo
 from invenio.ext.logging import register_exception
-# from invenio.modules.collections.cache import get_collection_reclist
 from invenio.legacy.bibrecord import get_fieldvalues
 from invenio.legacy.dbquery import datetime_format, run_sql
 from invenio.legacy.search_engine import check_user_can_view_record, \
     guess_primary_collection_of_a_record
-from invenio.legacy.webuser import collect_user_info, get_email, get_user_info
 from invenio_access.engine import acc_authorize_action
 from invenio.utils.date import convert_datestruct_to_datetext, \
     convert_datetext_to_dategui, datetext_default
@@ -59,11 +59,13 @@ from invenio.utils.htmlwasher import EmailWasher
 from invenio.utils.mail import email_quote_txt, email_quoted_txt2html
 from invenio.utils.url import wash_url_argument
 
+from invenio_accounts.models import User
+
+from six import iteritems
+
 from .config import CFG_WEBCOMMENT_ACTION_CODE, InvenioWebCommentError, \
     InvenioWebCommentWarning
 from .models import CmtRECORDCOMMENT
-
-# Invenio imports:
 
 try:
     import invenio.legacy.template
@@ -92,31 +94,31 @@ def perform_request_display_comments_or_remarks(
         display_comment_rounds=None):
     """
     Returns all the comments (reviews) of a specific internal record or external basket record.
-    @param recID:  record id where (internal record IDs > 0) or (external basket record IDs < -100)
-    @param display_order:       hh = highest helpful score, review only
+    :param recID:  record id where (internal record IDs > 0) or (external basket record IDs < -100)
+    :param display_order:       hh = highest helpful score, review only
                                 lh = lowest helpful score, review only
                                 hs = highest star score, review only
                                 ls = lowest star score, review only
                                 od = oldest date
                                 nd = newest date
-    @param display_since:       all= no filtering by date
+    :param display_since:       all= no filtering by date
                                 nd = n days ago
                                 nw = n weeks ago
                                 nm = n months ago
                                 ny = n years ago
                                 where n is a single digit integer between 0 and 9
-    @param nb_per_page: number of results per page
-    @param page: results page
-    @param voted: boolean, active if user voted for a review, see perform_request_vote function
-    @param reported: boolean, active if user reported a certain comment/review, perform_request_report function
-    @param subscribed: int, 1 if user just subscribed to discussion, -1 if unsubscribed
-    @param reviews: boolean, enabled if reviews, disabled for comments
-    @param uid: the id of the user who is reading comments
-    @param can_send_comments: if user can send comment or not
-    @param can_attach_files: if user can attach file to comment or not
-    @param user_is_subscribed_to_discussion: True if user already receives new comments by email
-    @param user_can_unsubscribe_from_discussion: True is user is allowed to unsubscribe from discussion
-    @return html body.
+    :param nb_per_page: number of results per page
+    :param page: results page
+    :param voted: boolean, active if user voted for a review, see perform_request_vote function
+    :param reported: boolean, active if user reported a certain comment/review, perform_request_report function
+    :param subscribed: int, 1 if user just subscribed to discussion, -1 if unsubscribed
+    :param reviews: boolean, enabled if reviews, disabled for comments
+    :param uid: the id of the user who is reading comments
+    :param can_send_comments: if user can send comment or not
+    :param can_attach_files: if user can attach file to comment or not
+    :param user_is_subscribed_to_discussion: True if user already receives new comments by email
+    :param user_can_unsubscribe_from_discussion: True is user is allowed to unsubscribe from discussion
+    :return html body.
     """
     _ = gettext_set_language(ln)
 
@@ -156,7 +158,7 @@ def perform_request_display_comments_or_remarks(
     # CERN hack ends
 
     # Query the database and filter results
-    user_info = collect_user_info(uid)
+    user_info = UserInfo(uid)
     res = query_retrieve_comments_or_remarks(
         recID,
         display_order,
@@ -373,10 +375,10 @@ def perform_request_display_comments_or_remarks(
 def perform_request_vote(cmt_id, client_ip_address, value, uid=-1):
     """
     Vote positively or negatively for a comment/review
-    @param cmt_id: review id
-    @param value: +1 for voting positively
+    :param cmt_id: review id
+    :param value: +1 for voting positively
                   -1 for voting negatively
-    @return: integer 1 if successful, integer 0 if not
+    :return: integer 1 if successful, integer 0 if not
     """
     cmt_id = wash_url_argument(cmt_id, 'int')
     client_ip_address = wash_url_argument(client_ip_address, 'str')
@@ -403,9 +405,9 @@ def perform_request_vote(cmt_id, client_ip_address, value, uid=-1):
 def check_user_can_comment(recID, client_ip_address, uid=-1):
     """ Check if a user hasn't already commented within the last seconds
     time limit: CFG_WEBCOMMENT_TIMELIMIT_PROCESSING_COMMENTS_IN_SECONDS
-    @param recID: record id
-    @param client_ip_address: IP => use: str(req.remote_ip)
-    @param uid: user id, as given by invenio.legacy.webuser.getUid(req)
+    :param recID: record id
+    :param client_ip_address: IP => use: str(req.remote_ip)
+    :param uid: user id, as given by invenio.legacy.webuser.getUid(req)
     """
     recID = wash_url_argument(recID, 'int')
     client_ip_address = wash_url_argument(client_ip_address, 'str')
@@ -435,9 +437,9 @@ def check_user_can_comment(recID, client_ip_address, uid=-1):
 def check_user_can_review(recID, client_ip_address, uid=-1):
     """ Check if a user hasn't already reviewed within the last seconds
     time limit: CFG_WEBCOMMENT_TIMELIMIT_PROCESSING_REVIEWS_IN_SECONDS
-    @param recID: record ID
-    @param client_ip_address: IP => use: str(req.remote_ip)
-    @param uid: user id, as given by invenio.legacy.webuser.getUid(req)
+    :param recID: record ID
+    :param client_ip_address: IP => use: str(req.remote_ip)
+    :param uid: user id, as given by invenio.legacy.webuser.getUid(req)
     """
     action_code = CFG_WEBCOMMENT_ACTION_CODE['ADD_REVIEW']
     query = """SELECT id_bibrec
@@ -458,9 +460,9 @@ def check_user_can_review(recID, client_ip_address, uid=-1):
 
 def check_user_can_vote(cmt_id, client_ip_address, uid=-1):
     """ Checks if a user hasn't already voted
-    @param cmt_id: comment id
-    @param client_ip_address: IP => use: str(req.remote_ip)
-    @param uid: user id, as given by invenio.legacy.webuser.getUid(req)
+    :param cmt_id: comment id
+    :param client_ip_address: IP => use: str(req.remote_ip)
+    :param uid: user id, as given by invenio.legacy.webuser.getUid(req)
     """
     cmt_id = wash_url_argument(cmt_id, 'int')
     client_ip_address = wash_url_argument(client_ip_address, 'str')
@@ -512,8 +514,8 @@ def perform_request_report(cmt_id, client_ip_address, uid=-1):
     Will send an email to the administrator if number of reports is a multiple
     of CFG_WEBCOMMENT_NB_REPORTS_BEFORE_SEND_EMAIL_TO_ADMIN
 
-    @param cmt_id: comment id
-    @return: integer 1 if successful, integer 0 if not. -2 if comment does not exist
+    :param cmt_id: comment id
+    :return: integer 1 if successful, integer 0 if not. -2 if comment does not exist
     """
     cmt_id = wash_url_argument(cmt_id, 'int')
     if cmt_id <= 0:
@@ -608,9 +610,9 @@ Please go to the record page %(comment_admin_link)s to delete this message if ne
 
 def check_user_can_report(cmt_id, client_ip_address, uid=-1):
     """ Checks if a user hasn't already reported a comment
-    @param cmt_id: comment id
-    @param client_ip_address: IP => use: str(req.remote_ip)
-    @param uid: user id, as given by invenio.legacy.webuser.getUid(req)
+    :param cmt_id: comment id
+    :param client_ip_address: IP => use: str(req.remote_ip)
+    :param uid: user id, as given by invenio.legacy.webuser.getUid(req)
     """
     cmt_id = wash_url_argument(cmt_id, 'int')
     client_ip_address = wash_url_argument(client_ip_address, 'str')
@@ -632,8 +634,8 @@ def check_user_can_report(cmt_id, client_ip_address, uid=-1):
 def query_get_user_contact_info(uid):
     """
     Get the user contact information
-    @return: tuple (nickname, email, last_login), if none found return ()
-    Note: for the moment, if no nickname, will return email address up to the '@'
+    :return: tuple (nickname, email, last_login), if none found return ()
+    Note: for the moment, if no nickname, will return email address up to the ':'
     """
     # FIXME compatibility with postgresql
     query1 = """SELECT nickname, email,
@@ -652,8 +654,8 @@ def query_get_user_contact_info(uid):
 def query_get_user_reports_and_votes(uid):
     """
     Retrieve total number of reports and votes of a particular user
-    @param uid: user id
-    @return: tuple (total_nb_reports, total_nb_votes_yes, total_nb_votes_total)
+    :param uid: user id
+    :return: tuple (total_nb_reports, total_nb_votes_yes, total_nb_votes_total)
             if none found return ()
     """
     query1 = """SELECT nb_votes_yes,
@@ -676,8 +678,8 @@ def query_get_user_reports_and_votes(uid):
 def query_get_comment(comID):
     """
     Get all fields of a comment
-    @param comID: comment id
-    @return: tuple (comID, id_bibrec, id_user, body, date_creation, star_score, nb_votes_yes, nb_votes_total, title, nb_abuse_reports, round_name, restriction)
+    :param comID: comment id
+    :return: tuple (comID, id_bibrec, id_user, body, date_creation, star_score, nb_votes_yes, nb_votes_total, title, nb_abuse_reports, round_name, restriction)
             if none found return ()
     """
     query1 = """SELECT id,
@@ -707,8 +709,8 @@ def query_get_comment(comID):
 def query_record_report_this(comID):
     """
     Increment the number of reports for a comment
-    @param comID: comment id
-    @return: tuple (success, new_total_nb_reports_for_this_comment) where
+    :param comID: comment id
+    :return: tuple (success, new_total_nb_reports_for_this_comment) where
     success is integer 1 if success, integer 0 if not, -2 if comment does not exist
     """
     # retrieve nb_abuse_reports
@@ -730,9 +732,9 @@ def query_record_useful_review(comID, value):
     """
     private funciton
     Adjust the number of useful votes and number of total votes for a comment.
-    @param comID: comment id
-    @param value: +1 or -1
-    @return: integer 1 if successful, integer 0 if not
+    :param comID: comment id
+    :param value: +1 or -1
+    :return: integer 1 if successful, integer 0 if not
     """
     # retrieve nb_useful votes
     query1 = """SELECT nb_votes_total, nb_votes_yes FROM "cmtRECORDCOMMENT" WHERE id=%s"""
@@ -762,20 +764,20 @@ def query_retrieve_comments_or_remarks(
     """
     Private function
     Retrieve tuple of comments or remarks from the database
-    @param recID: record id
-    @param display_order:   hh = highest helpful score
+    :param recID: record id
+    :param display_order:   hh = highest helpful score
                             lh = lowest helpful score
                             hs = highest star score
                             ls = lowest star score
                             od = oldest date
                             nd = newest date
-    @param display_since: datetime, e.g. 0000-00-00 00:00:00
-    @param ranking: boolean, enabled if reviews, disabled for comments
-    @param limit: number of comments/review to return
-    @return: tuple of comment where comment is
+    :param display_since: datetime, e.g. 0000-00-00 00:00:00
+    :param ranking: boolean, enabled if reviews, disabled for comments
+    :param limit: number of comments/review to return
+    :return: tuple of comment where comment is
             tuple (nickname, uid, date_creation, body, status, id) if ranking disabled or
             tuple (nickname, uid, date_creation, body, status, nb_votes_yes, nb_votes_total, star_score, title, id)
-    Note: for the moment, if no nickname, will return email address up to '@'
+    Note: for the moment, if no nickname, will return email address up to ':'
     """
     display_since = calculate_start_date(display_since)
 
@@ -865,10 +867,10 @@ def query_retrieve_comments_or_remarks(
 # Returns the list of children (i.e. direct descendants) ordered by time
 # of addition.
 
-#     @param comID: the ID of the comment for which we want to retrieve children
-#     @type comID: int
-#     @return the list of children
-#     @rtype: list
+#     :param comID: the ID of the comment for which we want to retrieve children
+#     :type comID: int
+#     :return the list of children
+#     :rtype: list
 #     """
 #     res = run_sql("SELECT id FROM cmtRECORDCOMMENT WHERE in_reply_to_id_cmtRECORDCOMMENT=%s", (comID,))
 #     return [row[0] for row in res]
@@ -878,13 +880,13 @@ def query_retrieve_comments_or_remarks(
 #     Returns the list of descendants of the given comment, orderd from
 #     oldest to newest ("top-down"), down to depth specified as parameter.
 
-#     @param comID: the ID of the comment for which we want to retrieve descendant
-#     @type comID: int
-#     @param depth: the max depth down to which we want to retrieve
+#     :param comID: the ID of the comment for which we want to retrieve descendant
+#     :type comID: int
+#     :param depth: the max depth down to which we want to retrieve
 #                   descendants. Specify None for no limit, 1 for direct
 #                   children only, etc.
-#     @return the list of ancestors
-#     @rtype: list(tuple(comment ID, descendants comments IDs))
+#     :return the list of ancestors
+#     :rtype: list(tuple(comment ID, descendants comments IDs))
 #     """
 #     if depth == 0:
 #         return (comID, [])
@@ -907,14 +909,14 @@ def get_comment_ancestors(comID, depth=None):
     oldest to newest ("top-down": direct parent of comID is at last position),
     up to given depth
 
-    @param comID: the ID of the comment for which we want to retrieve ancestors
-    @type comID: int
-    @param depth: the maximum of levels up from the given comment we
+    :param comID: the ID of the comment for which we want to retrieve ancestors
+    :type comID: int
+    :param depth: the maximum of levels up from the given comment we
                   want to retrieve ancestors. None for no limit, 1 for
                   direct parent only, etc.
-    @type depth: int
-    @return the list of ancestors
-    @rtype: list
+    :type depth: int
+    :return the list of ancestors
+    :rtype: list
     """
     if depth == 0:
         return []
@@ -953,16 +955,16 @@ def query_add_comment_or_remark(reviews=0, recID=0, uid=-1, msg="",
     """
     Private function
     Insert a comment/review or remarkinto the database
-    @param recID: record id
-    @param uid: user id
-    @param msg: comment body
-    @param note: comment title
-    @param score: review star score
-    @param priority: remark priority #!FIXME
-    @param editor_type: the kind of editor used to submit the comment: 'textarea', 'ckeditor'
-    @param req: request object. If provided, email notification are sent after we reply to user request.
-    @param reply_to: the id of the comment we are replying to with this inserted comment.
-    @return: integer >0 representing id if successful, integer 0 if not
+    :param recID: record id
+    :param uid: user id
+    :param msg: comment body
+    :param note: comment title
+    :param score: review star score
+    :param priority: remark priority #!FIXME
+    :param editor_type: the kind of editor used to submit the comment: 'textarea', 'ckeditor'
+    :param req: request object. If provided, email notification are sent after we reply to user request.
+    :param reply_to: the id of the comment we are replying to with this inserted comment.
+    :return: integer >0 representing id if successful, integer 0 if not
     """
     current_date = calculate_start_date('0d')
     # change utf-8 message into general unicode
@@ -1086,7 +1088,7 @@ def query_add_comment_or_remark(reviews=0, recID=0, uid=-1, msg="",
             Define a callback that retrieves subscribed users, and
             notify them by email.
 
-            @param data: contains the necessary parameters in a tuple:
+            :param data: contains the necessary parameters in a tuple:
                          (recid, uid, comid, msg, note, score, editor_type, reviews)
             """
             recid, uid, comid, msg, note, score, editor_type, reviews = data
@@ -1121,11 +1123,11 @@ def move_attached_files_to_storage(attached_files, recID, comid):
     Move the files that were just attached to a new comment to their
     final location.
 
-    @param attached_files: the mappings of desired filename to attach
+    :param attached_files: the mappings of desired filename to attach
                            and path where to find the original file
-    @type attached_files: dict {filename, filepath}
-    @param recID: the record ID to which we attach the files
-    @param comid: the comment ID to which we attach the files
+    :type attached_files: dict {filename, filepath}
+    :param recID: the record ID to which we attach the files
+    :param comid: the comment ID to which we attach the files
     """
     for filename, filepath in iteritems(attached_files):
         dest_dir = os.path.join(CFG_COMMENTSDIR, str(recID), str(comid))
@@ -1142,8 +1144,8 @@ def get_attached_files(recid, comid):
     """
     Returns a list with tuples (filename, filepath, fileurl)
 
-    @param recid: the recid to which the comment belong
-    @param comid: the commment id for which we want to retrieve files
+    :param recid: the recid to which the comment belong
+    :param comid: the commment id for which we want to retrieve files
     """
     base_dir = os.path.join(CFG_COMMENTSDIR, str(recid), str(comid))
     if os.path.isdir(base_dir):
@@ -1174,9 +1176,9 @@ def subscribe_user_to_discussion(recID, uid):
     Subscribe a user to a discussion, so the she receives by emails
     all new new comments for this record.
 
-    @param recID: record ID corresponding to the discussion we want to
+    :param recID: record ID corresponding to the discussion we want to
                   subscribe the user
-    @param uid: user id
+    :param uid: user id
     """
     query = """INSERT INTO "cmtSUBSCRIPTION" (id_bibrec, id_user, creation_time)
                     VALUES (%s, %s, %s)"""
@@ -1192,10 +1194,10 @@ def unsubscribe_user_from_discussion(recID, uid):
     """
     Unsubscribe users from a discussion.
 
-    @param recID: record ID corresponding to the discussion we want to
+    :param recID: record ID corresponding to the discussion we want to
                   unsubscribe the user
-    @param uid: user id
-    @return 1 if successful, 0 if not
+    :param uid: user id
+    :return 1 if successful, 0 if not
     """
     query = """DELETE FROM "cmtSUBSCRIPTION"
                      WHERE id_bibrec=%s AND id_user=%s"""
@@ -1215,14 +1217,14 @@ def get_user_subscription_to_discussion(recID, uid):
     discussion. This does not check authorizations (for eg. if user
     was subscribed, but is suddenly no longer authorized).
 
-    @param recID: record ID
-    @param uid: user id
-    @return:
+    :param recID: record ID
+    :param uid: user id
+    :return:
                - 0 if user is not subscribed to discussion
                - 1 if user is subscribed, and is allowed to unsubscribe
                - 2 if user is subscribed, but cannot unsubscribe
     """
-    user_email = get_email(uid)
+    user_email = User.query.get(uid).email
     (emails1, emails2) = get_users_subscribed_to_discussion(
         recID, check_authorizations=False)
     if user_email in emails1:
@@ -1246,9 +1248,9 @@ def get_users_subscribed_to_discussion(recID, check_authorizations=True):
     to a discussion AND is an automatic recipients for updates, it
     will only appear in the second list.
 
-    @param recID: record ID for which we want to retrieve subscribed users
-    @param check_authorizations: if True, check again if users are authorized to view comment
-    @return tuple (emails1, emails2)
+    :param recID: record ID for which we want to retrieve subscribed users
+    :param check_authorizations: if True, check again if users are authorized to view comment
+    :return tuple (emails1, emails2)
     """
     subscribers_emails = {}
 
@@ -1259,7 +1261,7 @@ def get_users_subscribed_to_discussion(recID, check_authorizations=True):
     for row in res:
         uid = row[0]
         if check_authorizations:
-            user_info = collect_user_info(uid)
+            user_info = UserInfo(uid)
             (auth_code, auth_msg) = check_user_can_view_comments(
                 user_info, recID)
         else:
@@ -1270,7 +1272,7 @@ def get_users_subscribed_to_discussion(recID, check_authorizations=True):
             # Delete subscription
             unsubscribe_user_from_discussion(recID, uid)
         else:
-            email = get_email(uid)
+            email = User.query.get(uid).email
             if '@' in email:
                 subscribers_emails[email] = True
 
@@ -1306,16 +1308,16 @@ def email_subscribers_about_new_comment(recID, reviews, emails1,
     Notify subscribers that a new comment was posted.
     FIXME: consider recipient preference to send email in correct language.
 
-    @param recID: record id
-    @param emails1: list of emails for users who can unsubscribe from discussion
-    @param emails2: list of emails for users who cannot unsubscribe from discussion
-    @param comID: the comment id
-    @param msg: comment body
-    @param note: comment title
-    @param score: review star score
-    @param editor_type: the kind of editor used to submit the comment: 'textarea', 'ckeditor'
-    @rtype: bool
-    @return: True if email was sent okay, False if it was not.
+    :param recID: record id
+    :param emails1: list of emails for users who can unsubscribe from discussion
+    :param emails2: list of emails for users who cannot unsubscribe from discussion
+    :param comID: the comment id
+    :param msg: comment body
+    :param note: comment title
+    :param score: review star score
+    :param editor_type: the kind of editor used to submit the comment: 'textarea', 'ckeditor'
+    :rtype: bool
+    :return: True if email was sent okay, False if it was not.
     """
     _ = gettext_set_language(ln)
 
@@ -1432,10 +1434,10 @@ def get_record_status(recid):
     in cases where the restriction has not explicitely been set, even
     if the record itself is restricted.
 
-    @param recid: the record id
-    @type recid: int
-    @return tuple(restriction, round_name), where 'restriction' is empty string when no restriction applies
-    @rtype (string, int)
+    :param recid: the record id
+    :type recid: int
+    :return tuple(restriction, round_name), where 'restriction' is empty string when no restriction applies
+    :rtype (string, int)
     """
     collections_with_rounds = CFG_WEBCOMMENT_ROUND_DATAFIELD.keys()
     commenting_round = ""
@@ -1475,13 +1477,13 @@ def calculate_start_date(display_since):
     Private function
     Returns the datetime of display_since argument in MYSQL datetime format
     calculated according to the local time.
-    @param display_since: =  all= no filtering
+    :param display_since: =  all= no filtering
                             nd = n days ago
                             nw = n weeks ago
                             nm = n months ago
                             ny = n years ago
                             where n is a single digit number
-    @return: string of wanted datetime.
+    :return: string of wanted datetime.
             If 'all' given as argument, will return datetext_default
             datetext_default is defined in miscutils/lib/dateutils and
             equals 0000-00-00 00:00:00 => MySQL format
@@ -1549,13 +1551,13 @@ def get_first_comments_or_remarks(recID=-1,
     Gets nb number comments/reviews or remarks.
     In the case of comments, will get both comments and reviews
     Comments and remarks sorted by most recent date, reviews sorted by highest helpful score
-    @param recID: record id
-    @param ln: language
-    @param nb_comments: number of comment or remarks to get
-    @param nb_reviews: number of reviews or remarks to get
-    @param voted: 1 if user has voted for a remark
-    @param reported: 1 if user has reported a comment or review
-    @return: if comment, tuple (comments, reviews) both being html of first nb comments/reviews
+    :param recID: record id
+    :param ln: language
+    :param nb_comments: number of comment or remarks to get
+    :param nb_reviews: number of reviews or remarks to get
+    :param voted: 1 if user has voted for a remark
+    :param reported: 1 if user has reported a comment or review
+    :return: if comment, tuple (comments, reviews) both being html of first nb comments/reviews
             if remark, tuple (remakrs, None)
     """
     _ = gettext_set_language(ln)
@@ -1692,8 +1694,8 @@ def calculate_avg_score(res):
     """
     private function
     Calculate the avg score of reviews present in res
-    @param res: tuple of tuple returned from query_retrieve_comments_or_remarks
-    @return: a float of the average score rounded to the closest 0.5
+    :param res: tuple of tuple returned from query_retrieve_comments_or_remarks
+    :return: a float of the average score rounded to the closest 0.5
     """
     c_star_score = 6
     avg_score = 0.0
@@ -1736,26 +1738,26 @@ def perform_request_add_comment_or_remark(recID=0,
                                           warnings=None):
     """
     Add a comment/review or remark
-    @param recID: record id
-    @param uid: user id
-    @param action:  'DISPLAY' to display add form
+    :param recID: record id
+    :param uid: user id
+    :param action:  'DISPLAY' to display add form
                     'SUBMIT' to submit comment once form is filled
                     'REPLY' to reply to an existing comment
-    @param ln: language
-    @param msg: the body of the comment/review or remark
-    @param score: star score of the review
-    @param note: title of the review
-    @param priority: priority of remark (int)
-    @param reviews: boolean, if enabled will add a review, if disabled will add a comment
-    @param comID: if replying, this is the comment id of the comment we are replying to
-    @param editor_type: the kind of editor/input used for the comment: 'textarea', 'ckeditor'
-    @param can_attach_files: if user can attach files to comments or not
-    @param subscribe: if True, subscribe user to receive new comments by email
-    @param req: request object. Used to register callback to send email notification
-    @param attached_files: newly attached files to this comment, mapping filename to filepath
-    @type attached_files: dict
-    @param warnings: list of warning tuples (warning_text, warning_color) that should be considered
-    @return:
+    :param ln: language
+    :param msg: the body of the comment/review or remark
+    :param score: star score of the review
+    :param note: title of the review
+    :param priority: priority of remark (int)
+    :param reviews: boolean, if enabled will add a review, if disabled will add a comment
+    :param comID: if replying, this is the comment id of the comment we are replying to
+    :param editor_type: the kind of editor/input used for the comment: 'textarea', 'ckeditor'
+    :param can_attach_files: if user can attach files to comments or not
+    :param subscribe: if True, subscribe user to receive new comments by email
+    :param req: request object. Used to register callback to send email notification
+    :param attached_files: newly attached files to this comment, mapping filename to filepath
+    :type attached_files: dict
+    :param warnings: list of warning tuples (warning_text, warning_color) that should be considered
+    :return:
              - html add form if action is display or reply
              - html successful added form if action is submit
     """
@@ -1763,7 +1765,6 @@ def perform_request_add_comment_or_remark(recID=0,
     if warnings is None:
         warnings = []
 
-    actions = ['DISPLAY', 'REPLY', 'SUBMIT']
     _ = gettext_set_language(ln)
 
     # check arguments
@@ -1843,7 +1844,7 @@ def perform_request_add_comment_or_remark(recID=0,
             if comID > 0:
                 comment = query_get_comment(comID)
                 if comment:
-                    user_info = get_user_info(comment[2])
+                    user_info = UserInfo(comment[2])
                     if user_info:
                         date_creation = convert_datetext_to_dategui(
                             str(comment[4]))
@@ -2066,7 +2067,7 @@ def notify_admin_of_new_comment(comID):
         if not len(nickname) > 0:
             nickname = email.split('@')[0]
     else:
-        nickname = email = last_login = "ERROR: Could not retrieve"
+        nickname = email = "ERROR: Could not retrieve"
 
     review_stuff = '''
     Star score  = %s
@@ -2137,9 +2138,9 @@ To moderate the %(comment_or_review)s go to %(siteurl)s/%(CFG_SITE_RECORD)s/%(re
 def check_recID_is_in_range(recID, warnings=[], ln=CFG_SITE_LANG):
     """
     Check that recID is >= 0
-    @param recID: record id
-    @param warnings: list of warning tuples (warning_text, warning_color)
-    @return: tuple (boolean, html) where boolean (1=true, 0=false)
+    :param recID: record id
+    :param warnings: list of warning tuples (warning_text, warning_color)
+    :return: tuple (boolean, html) where boolean (1=true, 0=false)
                                   and html is the body of the page to display if there was a problem
     """
     _ = gettext_set_language(ln)
@@ -2205,12 +2206,12 @@ def check_recID_is_in_range(recID, warnings=[], ln=CFG_SITE_LANG):
 def check_int_arg_is_in_range(value, name, gte_value, lte_value=None):
     """
     Check that variable with name 'name' >= gte_value and optionally <= lte_value
-    @param value: variable value
-    @param name: variable name
-    @param errors: list of error tuples (error_id, value)
-    @param gte_value: greater than or equal to value
-    @param lte_value: less than or equal to value
-    @return: boolean (1=true, 0=false)
+    :param value: variable value
+    :param name: variable name
+    :param errors: list of error tuples (error_id, value)
+    :param gte_value: greater than or equal to value
+    :param lte_value: less than or equal to value
+    :return: boolean (1=true, 0=false)
     """
 
     if not isinstance(value, int):
@@ -2250,8 +2251,8 @@ def get_mini_reviews(recid, ln=CFG_SITE_LANG):
     Returns the web controls to add reviews to a record from the
     detailed record pages mini-panel.
 
-    @param recid: the id of the displayed record
-    @param ln: the user's language
+    :param recid: the id of the displayed record
+    :param ln: the user's language
     """
     if CFG_WEBCOMMENT_ALLOW_SHORT_REVIEWS:
         action = 'SUBMIT'
@@ -2298,11 +2299,11 @@ def check_user_can_view_comment(user_info, comid, restriction=None):
 
     You can omit 'comid' if you already know the 'restriction'
 
-    @param user_info: the user info object
-    @param comid: the comment id of that we want to check
-    @param restriction: the restriction applied to given comment (if known. Otherwise retrieved automatically)
+    :param user_info: the user info object
+    :param comid: the comment id of that we want to check
+    :param restriction: the restriction applied to given comment (if known. Otherwise retrieved automatically)
 
-    @return: the same type as acc_authorize_action
+    :return: the same type as acc_authorize_action
     """
     if restriction is None:
         comment = query_get_comment(comid)
@@ -2337,8 +2338,8 @@ def check_comment_belongs_to_record(comid, recid):
     Return True if the comment is indeed part of given record (even if comment or/and record have
     been "deleted"). Else return False.
 
-    @param comid: the id of the comment to check membership
-    @param recid: the recid of the record we want to check if comment belongs to
+    :param comid: the id of the comment to check membership
+    :param recid: the recid of the record we want to check if comment belongs to
     """
     query = """SELECT id_bibrec from "cmtRECORDCOMMENT" WHERE id=%s"""
     params = (comid,)
@@ -2371,11 +2372,11 @@ def toggle_comment_visibility(uid, comid, collapse, recid):
     Toggle the visibility of the given comment (collapse) for the
     given user.  Return the new visibility
 
-    @param uid: the user id for which the change applies
-    @param comid: the comment id to close/open
-    @param collapse: if the comment is to be closed (1) or opened (0)
-    @param recid: the record id to which the comment belongs
-    @return: if the comment is visible or not after the update
+    :param uid: the user id for which the change applies
+    :param comid: the comment id to close/open
+    :param collapse: if the comment is to be closed (1) or opened (0)
+    :param recid: the record id to which the comment belongs
+    :return: if the comment is visible or not after the update
     """
     # We rely on the client to tell if comment should be collapsed or
     # developed, to ensure consistency between our internal state and
@@ -2427,7 +2428,7 @@ def is_comment_deleted(comid):
     """
     Return True of the comment is deleted. Else False
 
-    @param comid: ID of comment to check
+    :param comid: ID of comment to check
     """
     query = """SELECT status from "cmtRECORDCOMMENT" WHERE id=%s"""
     params = (comid,)
@@ -2447,27 +2448,27 @@ def perform_display_your_comments(user_info,
     """
     Display all comments submitted by the user.
 
-    @TODO: support reviews too
+    :TODO: support reviews too
 
-    @param user_info: standard user info object.
-    @param comments: ordered list of tuples (id_bibrec, comid, date_creation, body, status, in_reply_to_id_cmtRECORDCOMMENT)
-    @param page_number: page on which the user is.
-    @type page_number: integer
-    @param selected_order_by_option: seleccted ordering option. Can be one of:
+    :param user_info: standard user info object.
+    :param comments: ordered list of tuples (id_bibrec, comid, date_creation, body, status, in_reply_to_id_cmtRECORDCOMMENT)
+    :param page_number: page on which the user is.
+    :type page_number: integer
+    :param selected_order_by_option: seleccted ordering option. Can be one of:
           - ocf: Oldest comment first
           - lcf: Latest comment first
           - grof: Group by record, oldest commented first
           - grlf: Group by record, latest commented first
-    @type selected_order_by_option: string
-    @param selected_display_number_option: number of results to show per page. Can be a string-digit or 'all'.
-    @type selected_display_number_option: string
-    @param selected_display_format_option: how to show records. Can be one of:
+    :type selected_order_by_option: string
+    :param selected_display_number_option: number of results to show per page. Can be a string-digit or 'all'.
+    :type selected_display_number_option: string
+    :param selected_display_format_option: how to show records. Can be one of:
           - rc: Records and comments
           - ro: Records only
           - co: Comments only
-    @type selected_display_format_option: string
-    @ln: language
-    @type ln: string
+    :type selected_display_format_option: string
+    :ln: language
+    :type ln: string
     """
     query_params = ""
     nb_total_pages = 0
