@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 
 # This file is part of Invenio.
-# Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2012, 2013, 2014, 2015 CERN.
+# Copyright (C) 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010, 2012,
+#               2013, 2014, 2015 CERN.
 #
 # Invenio is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License as
@@ -33,6 +34,8 @@ import time
 
 from datetime import datetime, timedelta
 
+from six import iteritems
+
 from invenio.base.i18n import gettext_set_language, wash_language
 from invenio.config import CFG_COMMENTSDIR, CFG_SITE_LANG, CFG_SITE_NAME, \
     CFG_SITE_RECORD, CFG_SITE_SUPPORT_EMAIL, CFG_SITE_URL, \
@@ -45,13 +48,11 @@ from invenio.config import CFG_COMMENTSDIR, CFG_SITE_LANG, CFG_SITE_NAME, \
     CFG_WEBCOMMENT_RESTRICTION_DATAFIELD, CFG_WEBCOMMENT_ROUND_DATAFIELD, \
     CFG_WEBCOMMENT_TIMELIMIT_PROCESSING_COMMENTS_IN_SECONDS
 from invenio.ext.email import send_email
-from invenio.ext.login.legacy_user import UserInfo
 from invenio.ext.logging import register_exception
+from invenio.ext.login.legacy_user import UserInfo
 from invenio.legacy.bibrecord import get_fieldvalues
 from invenio.legacy.dbquery import datetime_format, run_sql
-from invenio.legacy.search_engine import check_user_can_view_record, \
-    guess_primary_collection_of_a_record
-from invenio_access.engine import acc_authorize_action
+from invenio.legacy.search_engine import guess_primary_collection_of_a_record
 from invenio.utils.date import convert_datestruct_to_datetext, \
     convert_datetext_to_dategui, datetext_default
 from invenio.utils.html import tidy_html
@@ -61,7 +62,9 @@ from invenio.utils.url import wash_url_argument
 
 from invenio_accounts.models import User
 
-from six import iteritems
+from invenio_access.engine import acc_authorize_action
+
+from invenio_records.access import check_user_can_view_record
 
 from .config import CFG_WEBCOMMENT_ACTION_CODE, InvenioWebCommentError, \
     InvenioWebCommentWarning
@@ -2547,3 +2550,4 @@ def perform_display_your_comments(user_info,
         nb_total_results=nb_total_results,
         nb_total_pages=nb_total_pages,
         ln=ln)
+
