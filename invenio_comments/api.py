@@ -36,7 +36,7 @@ from datetime import datetime, timedelta
 
 from six import iteritems
 
-from invenio.base.i18n import gettext_set_language, wash_language
+from invenio_base.i18n import gettext_set_language, wash_language
 from invenio.config import CFG_COMMENTSDIR, CFG_SITE_LANG, CFG_SITE_NAME, \
     CFG_SITE_RECORD, CFG_SITE_SUPPORT_EMAIL, CFG_SITE_URL, \
     CFG_WEBALERT_ALERT_ENGINE_EMAIL, CFG_WEBCOMMENT_ADMIN_NOTIFICATION_LEVEL, \

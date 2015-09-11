@@ -21,7 +21,7 @@
 
 from sqlalchemy import event
 
-from invenio.base.signals import record_after_update
+from invenio_base.signals import record_after_update
 from invenio.ext.sqlalchemy import db
 from invenio.ext.sqlalchemy.utils import session_manager
 

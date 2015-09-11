@@ -22,7 +22,7 @@
 from wtforms import HiddenField, SelectField, StringField, TextAreaField, \
     validators
 
-from invenio.base.i18n import _
+from invenio_base.i18n import _
 from invenio.utils.forms import InvenioBaseForm
 
 try:
