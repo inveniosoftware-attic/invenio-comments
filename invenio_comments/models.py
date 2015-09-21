@@ -22,8 +22,8 @@
 from sqlalchemy import event
 
 from invenio_base.signals import record_after_update
-from invenio.ext.sqlalchemy import db
-from invenio.ext.sqlalchemy.utils import session_manager
+from invenio_ext.sqlalchemy import db
+from invenio_ext.sqlalchemy.utils import session_manager
 
 from invenio_accounts.models import User
 from invenio_records.models import Record as Bibrec

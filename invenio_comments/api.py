@@ -47,9 +47,9 @@ from invenio.config import CFG_COMMENTSDIR, CFG_SITE_LANG, CFG_SITE_NAME, \
     CFG_WEBCOMMENT_NB_REPORTS_BEFORE_SEND_EMAIL_TO_ADMIN, \
     CFG_WEBCOMMENT_RESTRICTION_DATAFIELD, CFG_WEBCOMMENT_ROUND_DATAFIELD, \
     CFG_WEBCOMMENT_TIMELIMIT_PROCESSING_COMMENTS_IN_SECONDS
-from invenio.ext.email import send_email
-from invenio.ext.logging import register_exception
-from invenio.ext.login.legacy_user import UserInfo
+from invenio_ext.email import send_email
+from invenio_ext.logging import register_exception
+from invenio_ext.login.legacy_user import UserInfo
 from invenio.legacy.bibrecord import get_fieldvalues
 from invenio.legacy.dbquery import datetime_format, run_sql
 from invenio.legacy.search_engine import guess_primary_collection_of_a_record
