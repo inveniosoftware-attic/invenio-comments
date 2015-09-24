@@ -18,7 +18,8 @@
 # 59 Temple Place, Suite 330, Boston, MA 02111-1307, USA.
 
 from invenio_base.wrappers import lazy_import
-from invenio.testsuite import InvenioTestCase, make_test_suite, run_test_suite
+
+from invenio_testing import InvenioTestCase
 
 calculate_start_date = lazy_import(
     'invenio_comments.api:calculate_start_date')
