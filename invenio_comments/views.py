@@ -33,7 +33,7 @@ from invenio_base.globals import cfg
 from invenio_base.i18n import _
 from invenio.ext.principal import permission_required
 from invenio.ext.sqlalchemy import db
-from invenio.utils.mail import email_quote_txt
+from invenio_utils.mail import email_quote_txt
 from invenio_records.utils import visible_collection_tabs
 from invenio_records.views import request_record
 

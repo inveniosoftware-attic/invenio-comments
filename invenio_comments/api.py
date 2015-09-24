@@ -53,12 +53,12 @@ from invenio.ext.login.legacy_user import UserInfo
 from invenio.legacy.bibrecord import get_fieldvalues
 from invenio.legacy.dbquery import datetime_format, run_sql
 from invenio.legacy.search_engine import guess_primary_collection_of_a_record
-from invenio.utils.date import convert_datestruct_to_datetext, \
+from invenio_utils.date import convert_datestruct_to_datetext, \
     convert_datetext_to_dategui, datetext_default
-from invenio.utils.html import tidy_html
-from invenio.utils.htmlwasher import EmailWasher
-from invenio.utils.mail import email_quote_txt, email_quoted_txt2html
-from invenio.utils.url import wash_url_argument
+from invenio_utils.html import tidy_html
+from invenio_utils.htmlwasher import EmailWasher
+from invenio_utils.mail import email_quote_txt, email_quoted_txt2html
+from invenio_utils.url import wash_url_argument
 
 from invenio_accounts.models import User
 
