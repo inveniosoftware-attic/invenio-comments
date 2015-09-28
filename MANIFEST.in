@@ -1,9 +1,11 @@
 include *.rst
 include *.txt
+include *.py
 include LICENSE
 include pytest.ini
 include tox.ini
-include .dockerignore .editorconfig
+include babel.ini
+include .dockerignore .editorconfig .travis.invenio.cfg
 recursive-include docs *.bat
 recursive-include docs *.py
 recursive-include docs *.rst
@@ -12,3 +14,5 @@ recursive-include invenio_comments *.css
 recursive-include invenio_comments *.html
 recursive-include invenio_comments *.js
 recursive-include tests *.py
+recursive-include invenio_comments *.po
+recursive-include invenio_comments *.pot
