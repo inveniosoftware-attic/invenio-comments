@@ -24,7 +24,7 @@ Installation
 Documentation
 -------------
 
-   http://invenio-comments.readthedocs.org/en/v0.1.1
+   http://invenio-comments.readthedocs.io/en/v0.1.1
 
 Happy hacking and thanks for flying Invenio-Comments.
 
